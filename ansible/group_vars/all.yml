@@ -1,0 +1,152 @@
+---
+# Global variables for all hosts
+# These variables are inherited by all groups and hosts
+
+# Project information
+project_name: "{{ project_name | default('iac-solution') }}"
+environment: "{{ environment | default('dev') }}"
+aws_region: "{{ aws_region | default('us-west-2') }}"
+
+# Common system configuration
+system_timezone: "UTC"
+system_locale: "en_US.UTF-8"
+
+# SSH and user configuration
+ansible_user: ubuntu
+ansible_ssh_private_key_file: ~/.ssh/id_rsa
+ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+ansible_python_interpreter: /usr/bin/python3
+
+# Common packages for servers
+common_packages:
+  - httpd
+  - vim
+  - curl
+  - wget
+  - unzip
+  - git
+  - python3-pip
+  - awscli
+  - jq
+  - tree
+  - ncdu
+  - tmux
+  - rsync
+  - lsof
+  - net-tools
+  - tcpdump
+  - ntp
+  - ca-certificates
+  - software-properties-common
+  - apt-transport-https
+  - gnupg2
+
+# Security configuration
+enable_firewall: true
+enable_fail2ban: true
+enable_security_monitoring: true
+enable_auto_security_updates: true
+
+# Monitoring and logging
+enable_monitoring: true
+enable_cloudwatch: true
+log_retention_days: 30
+enable_system_monitoring: true
+
+# NTP configuration
+ntp_servers:
+  - "0.amazon.pool.ntp.org"
+  - "1.amazon.pool.ntp.org"
+  - "2.amazon.pool.ntp.org"
+  - "3.amazon.pool.ntp.org"
+
+# System limits
+system_limits:
+  - domain: '*'
+    type: soft
+    item: nofile
+    value: 65536
+  - domain: '*'
+    type: hard
+    item: nofile
+    value: 65536
+  - domain: '*'
+    type: soft
+    item: nproc
+    value: 4096
+  - domain: '*'
+    type: hard
+    item: nproc
+    value: 4096
+
+# Sysctl parameters for performance and security
+sysctl_parameters:
+  # Network performance
+  - name: net.core.rmem_max
+    value: 134217728
+  - name: net.core.wmem_max
+    value: 134217728
+  - name: net.ipv4.tcp_rmem
+    value: "4096 87380 134217728"
+  - name: net.ipv4.tcp_wmem
+    value: "4096 65536 134217728"
+  - name: net.core.netdev_max_backlog
+    value: 5000
+  - name: net.ipv4.tcp_congestion_control
+    value: bbr
+    
+  # Security
+  - name: net.ipv4.conf.all.send_redirects
+    value: 0
+  - name: net.ipv4.conf.default.send_redirects
+    value: 0
+  - name: net.ipv4.conf.all.accept_redirects
+    value: 0
+  - name: net.ipv4.conf.default.accept_redirects
+    value: 0
+  - name: net.ipv4.ip_forward
+    value: 0
+  - name: net.ipv4.icmp_echo_ignore_broadcasts
+    value: 1
+  - name: net.ipv4.tcp_syncookies
+    value: 1
+    
+  # File system
+  - name: fs.file-max
+    value: 2097152
+  - name: vm.swappiness
+    value: 10
+
+# CloudWatch configuration
+cloudwatch_namespace: "{{ project_name }}/{{ environment }}"
+cloudwatch_log_groups:
+  - name: "{{ project_name }}-{{ environment }}-syslog"
+    retention_days: "{{ log_retention_days }}"
+  - name: "{{ project_name }}-{{ environment }}-applications"
+    retention_days: "{{ log_retention_days }}"
+
+# Backup configuration
+enable_backups: true
+backup_retention_days: 7
+backup_s3_bucket_prefix: "{{ project_name }}-{{ environment }}"
+
+# Update configuration
+enable_auto_updates: true
+update_cache_valid_time: 3600
+
+# Environment-specific overrides
+dev_settings:
+  log_retention_days: 7
+  enable_debug_logging: true
+  backup_retention_days: 3
+
+staging_settings:
+  log_retention_days: 14
+  enable_debug_logging: false
+  backup_retention_days: 7
+
+prod_settings:
+  log_retention_days: 30
+  enable_debug_logging: false
+  backup_retention_days: 30
+  enable_enhanced_monitoring: true

@@ -1,0 +1,276 @@
+---
+# Common role tasks - applied to all servers
+# Handles basic system configuration, packages, and security hardening
+
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  tags: 
+    - common
+    - packages
+
+- name: Upgrade all packages to latest version
+  apt:
+    upgrade: safe
+    autoremove: yes
+  tags:
+    - common
+    - packages
+    - security
+
+- name: Install common packages
+  apt:
+    name: "{{ common_packages }}"
+    state: present
+  tags:
+    - common
+    - packages
+
+- name: Install additional environment-specific packages
+  apt:
+    name: "{{ additional_packages | default([]) }}"
+    state: present
+  when: additional_packages is defined
+  tags:
+    - common
+    - packages
+
+- name: Set timezone
+  timezone:
+    name: "{{ system_timezone | default('UTC') }}"
+  notify: restart rsyslog
+  tags:
+    - common
+    - system
+
+- name: Configure system hostname
+  hostname:
+    name: "{{ inventory_hostname }}"
+  tags:
+    - common
+    - system
+
+- name: Update /etc/hosts with hostname
+  lineinfile:
+    path: /etc/hosts
+    line: "127.0.1.1 {{ inventory_hostname }}"
+    regexp: "^127\\.0\\.1\\.1"
+  tags:
+    - common
+    - system
+
+- name: Create system users
+  user:
+    name: "{{ item.name }}"
+    group: "{{ item.group | default(item.name) }}"
+    groups: "{{ item.groups | default([]) }}"
+    shell: "{{ item.shell | default('/bin/bash') }}"
+    home: "{{ item.home | default('/home/' + item.name) }}"
+    create_home: yes
+    system: "{{ item.system | default(false) }}"
+    state: present
+  loop: "{{ system_users | default([]) }}"
+  tags:
+    - common
+    - users
+
+- name: Set up SSH keys for users
+  authorized_key:
+    user: "{{ item.0.name }}"
+    key: "{{ item.1 }}"
+    state: present
+  with_subelements:
+    - "{{ system_users | default([]) }}"
+    - ssh_keys
+    - skip_missing: true
+  tags:
+    - common
+    - users
+    - ssh
+
+- name: Configure sudo access
+  lineinfile:
+    path: /etc/sudoers.d/{{ item.name }}
+    line: "{{ item.name }} {{ item.sudo_rules | default('ALL=(ALL) NOPASSWD:ALL') }}"
+    create: yes
+    mode: '0440'
+    validate: 'visudo -cf %s'
+  loop: "{{ system_users | default([]) }}"
+  when: item.sudo is defined and item.sudo
+  tags:
+    - common
+    - users
+    - sudo
+
+- name: Configure system limits
+  pam_limits:
+    domain: "{{ item.domain }}"
+    limit_type: "{{ item.type }}"
+    limit_item: "{{ item.item }}"
+    value: "{{ item.value }}"
+  loop: "{{ system_limits | default([]) }}"
+  tags:
+    - common
+    - system
+    - limits
+
+- name: Configure sysctl parameters
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: yes
+  loop: "{{ sysctl_parameters | default([]) }}"
+  tags:
+    - common
+    - system
+    - sysctl
+
+- name: Setup log rotation
+  template:
+    src: logrotate.conf.j2
+    dest: "/etc/logrotate.d/{{ item.name }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ logrotate_configs | default([]) }}"
+  tags:
+    - common
+    - logging
+
+- name: Configure rsyslog
+  template:
+    src: rsyslog.conf.j2
+    dest: /etc/rsyslog.d/50-ansible.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart rsyslog
+  tags:
+    - common
+    - logging
+
+- name: Create application directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - /opt/scripts
+    - /var/log/applications
+    - /opt/monitoring
+  tags:
+    - common
+    - directories
+
+- name: Install system monitoring script
+  template:
+    src: system-monitor.sh.j2
+    dest: /opt/scripts/system-monitor.sh
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - common
+    - monitoring
+
+- name: Setup system monitoring cron job
+  cron:
+    name: "System monitoring"
+    job: "/opt/scripts/system-monitor.sh >> /var/log/applications/system-monitor.log 2>&1"
+    minute: "*/5"
+    hour: "*"
+    user: root
+  when: enable_system_monitoring | default(true)
+  tags:
+    - common
+    - monitoring
+    - cron
+
+- name: Configure automatic security updates
+  apt:
+    name: unattended-upgrades
+    state: present
+  when: enable_auto_updates | default(true)
+  tags:
+    - common
+    - security
+    - updates
+
+- name: Configure unattended upgrades
+  template:
+    src: 50unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades
+    owner: root
+    group: root
+    mode: '0644'
+  when: enable_auto_updates | default(true)
+  notify: restart unattended-upgrades
+  tags:
+    - common
+    - security
+    - updates
+
+- name: Install AWS CloudWatch agent
+  get_url:
+    url: https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+    dest: /tmp/amazon-cloudwatch-agent.deb
+    mode: '0644'
+  when: enable_cloudwatch | default(true)
+  tags:
+    - common
+    - monitoring
+    - cloudwatch
+
+- name: Install CloudWatch agent package
+  apt:
+    deb: /tmp/amazon-cloudwatch-agent.deb
+    state: present
+  when: enable_cloudwatch | default(true)
+  notify: restart amazon-cloudwatch-agent
+  tags:
+    - common
+    - monitoring
+    - cloudwatch
+
+- name: Configure CloudWatch agent
+  template:
+    src: amazon-cloudwatch-agent.json.j2
+    dest: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+    owner: cwagent
+    group: cwagent
+    mode: '0644'
+  when: enable_cloudwatch | default(true)
+  notify: restart amazon-cloudwatch-agent
+  tags:
+    - common
+    - monitoring
+    - cloudwatch
+
+- name: Start and enable services
+  systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  loop:
+    - rsyslog
+  tags:
+    - common
+    - services
+
+- name: Clean up temporary files
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/amazon-cloudwatch-agent.deb
+    - /tmp/*.deb
+  ignore_errors: yes
+  tags:
+    - common
+    - cleanup
+

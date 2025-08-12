@@ -1,0 +1,245 @@
+---
+# Main site playbook - orchestrates all server configurations
+# This is the entry point for configuring the entire infrastructure
+
+- name: Apply common configuration to all servers
+  hosts: all
+  gather_facts: yes
+  become: yes
+  roles:
+    - common
+    - security
+  vars:
+    common_packages:
+      - htop
+      - vim
+      - curl
+      - wget
+      - unzip
+      - git
+      - python3-pip
+      - awscli
+    security_packages:
+      - fail2ban
+      - ufw
+      - aide
+      - rkhunter
+  tags:
+    - common
+    - security
+    - base
+
+- name: Configure web servers
+  hosts: webservers
+  gather_facts: yes
+  become: yes
+  serial: "50%"  # Deploy to 50% of servers at a time
+  roles:
+    - webserver
+  vars:
+    nginx_worker_processes: auto
+    nginx_worker_connections: 1024
+    nginx_keepalive_timeout: 65
+    nginx_client_max_body_size: "10m"
+    nginx_ssl_protocols: "TLSv1.2 TLSv1.3"
+    nginx_ssl_ciphers: "ECDHE+AESGCM:ECDHE+AES256:ECDHE+AES128:!aNULL:!MD5:!DSS"
+    
+    # Application configuration
+    app_port: 3000
+    health_check_url: "/health"
+    
+    # Monitoring
+    enable_nginx_status: true
+    nginx_status_allow_ips:
+      - "127.0.0.1"
+      - "{{ vpc_cidr }}"
+  tags:
+    - webserver
+    - nginx
+    - web
+
+- name: Configure application servers
+  hosts: appservers
+  gather_facts: yes
+  become: yes
+  serial: "50%"
+  roles:
+    - appserver
+  vars:
+    # Node.js configuration
+    nodejs_version: "18.x"
+    npm_global_packages:
+      - pm2
+      - nodemon
+    
+    # Application configuration
+    app_name: "iac-solution-app"
+    app_port: 3000
+    app_env: "{{ environment }}"
+    app_log_level: "info"
+    
+    # PM2 configuration
+    pm2_apps:
+      - name: "{{ app_name }}"
+        script: "app.js"
+        instances: "max"
+        exec_mode: "cluster"
+        env:
+          NODE_ENV: "{{ app_env }}"
+          PORT: "{{ app_port }}"
+          LOG_LEVEL: "{{ app_log_level }}"
+    
+    # Database connection
+    database_host: "{{ hostvars['database']['ansible_host'] | default('localhost') }}"
+    database_port: "{{ hostvars['database']['db_port'] | default(5432) }}"
+    database_name: "{{ hostvars['database']['db_name'] | default('appdb') }}"
+  tags:
+    - appserver
+    - nodejs
+    - app
+
+- name: Configure database servers
+  hosts: databases
+  gather_facts: yes
+  become: yes
+  roles:
+    - database
+  vars:
+    # PostgreSQL configuration
+    postgresql_version: "15"
+    postgresql_port: 5432
+    postgresql_max_connections: 100
+    postgresql_shared_buffers: "128MB"
+    postgresql_effective_cache_size: "1GB"
+    postgresql_maintenance_work_mem: "64MB"
+    postgresql_checkpoint_completion_target: 0.9
+    postgresql_wal_buffers: "16MB"
+    postgresql_default_statistics_target: 100
+    
+    # Security settings
+    postgresql_listen_addresses: "'*'"
+    postgresql_ssl: true
+    postgresql_log_connections: true
+    postgresql_log_disconnections: true
+    postgresql_log_statement: "all"
+    postgresql_log_line_prefix: "%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h "
+    
+    # Backup configuration
+    postgresql_backup_enabled: true
+    postgresql_backup_retention_days: 7
+    postgresql_backup_schedule: "0 2 * * *"  # Daily at 2 AM
+  tags:
+    - database
+    - postgresql
+    - db
+  when: "'databases' in group_names"
+
+- name: Post-deployment tasks
+  hosts: all
+  gather_facts: no
+  become: yes
+  tasks:
+    - name: Restart services if needed
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+        daemon_reload: yes
+      loop: "{{ services_to_restart | default([]) }}"
+      when: services_to_restart is defined
+      
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        upgrade: safe
+        autoremove: yes
+      when: update_packages | default(false) | bool
+      
+    - name: Clean up temporary files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/ansible-*
+        - /tmp/*.deb
+        - /var/cache/apt/archives/*.deb
+      ignore_errors: yes
+      
+    - name: Verify services are running
+      service_facts:
+      
+    - name: Display service status
+      debug:
+        msg: "Service {{ item }} is {{ ansible_facts.services[item]['state'] }}"
+      loop: "{{ services_to_check | default(['nginx', 'ssh']) }}"
+      when: item in ansible_facts.services
+      
+  tags:
+    - post-deployment
+    - cleanup
+    - verification
+
+# Health checks and validation
+- name: Validate deployment
+  hosts: webservers
+  gather_facts: no
+  tasks:
+    - name: Check web server response
+      uri:
+        url: "http://{{ ansible_default_ipv4.address }}{{ health_check_url | default('/') }}"
+        method: GET
+        return_content: yes
+      register: health_check
+      retries: 3
+      delay: 10
+      
+    - name: Validate health check response
+      fail:
+        msg: "Health check failed: {{ health_check.content }}"
+      when: health_check.status != 200
+      
+  tags:
+    - validation
+    - health-check
+
+- name: Send deployment notification
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Log deployment completion
+      debug:
+        msg: |
+          Deployment completed successfully!
+          Environment: {{ environment }}
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          Web servers: {{ groups['webservers'] | length }}
+          App servers: {{ groups['appservers'] | length }}
+          Database servers: {{ groups['databases'] | length }}
+      
+    - name: Create deployment summary
+      copy:
+        content: |
+          Deployment Summary
+          ==================
+          Environment: {{ environment }}
+          Project: {{ project_name }}
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          
+          Infrastructure:
+          - Web servers: {{ groups['webservers'] | length }}
+          - App servers: {{ groups['appservers'] | length }}
+          - Database servers: {{ groups['databases'] | length }}
+          
+          Load Balancer: {{ load_balancer_dns | default('Not configured') }}
+          
+          Services configured:
+          - Nginx (web servers)
+          - Node.js applications (app servers)
+          - PostgreSQL (database servers)
+          - Security hardening (all servers)
+          - Monitoring and logging (all servers)
+        dest: "/tmp/deployment-summary-{{ environment }}-{{ ansible_date_time.epoch }}.txt"
+      delegate_to: localhost
+      
+  tags:
+    - notification
+    - summary

@@ -1,0 +1,86 @@
+{
+  "agent": {
+    "metrics_collection_interval": {{ cloudwatch_config.agent.metrics_collection_interval | default(60) }},
+    "run_as_user": "{{ cloudwatch_config.agent.run_as_user | default('cwagent') }}"
+  },
+  "metrics": {
+    "namespace": "{{ cloudwatch_config.metrics.namespace | default(project_name + '/' + environment) }}",
+    "metrics_collected": {
+      "cpu": {
+        "measurement": {{ cloudwatch_config.metrics.metrics_collected.cpu.measurement | default(['cpu_usage_idle', 'cpu_usage_iowait', 'cpu_usage_user', 'cpu_usage_system']) | to_json }},
+        "metrics_collection_interval": {{ cloudwatch_config.metrics.metrics_collected.cpu.metrics_collection_interval | default(60) }},
+        "totalcpu": {{ cloudwatch_config.metrics.metrics_collected.cpu.totalcpu | default(false) | lower }}
+      },
+      "disk": {
+        "measurement": {{ cloudwatch_config.metrics.metrics_collected.disk.measurement | default(['used_percent']) | to_json }},
+        "metrics_collection_interval": {{ cloudwatch_config.metrics.metrics_collected.disk.metrics_collection_interval | default(60) }},
+        "resources": {{ cloudwatch_config.metrics.metrics_collected.disk.resources | default(['*']) | to_json }}
+      },
+      "diskio": {
+        "measurement": {{ cloudwatch_config.metrics.metrics_collected.diskio.measurement | default(['io_time', 'read_bytes', 'write_bytes', 'reads', 'writes']) | to_json }},
+        "metrics_collection_interval": {{ cloudwatch_config.metrics.metrics_collected.diskio.metrics_collection_interval | default(60) }},
+        "resources": {{ cloudwatch_config.metrics.metrics_collected.diskio.resources | default(['*']) | to_json }}
+      },
+      "mem": {
+        "measurement": {{ cloudwatch_config.metrics.metrics_collected.mem.measurement | default(['mem_used_percent']) | to_json }},
+        "metrics_collection_interval": {{ cloudwatch_config.metrics.metrics_collected.mem.metrics_collection_interval | default(60) }}
+      },
+      "netstat": {
+        "measurement": {{ cloudwatch_config.metrics.metrics_collected.netstat.measurement | default(['tcp_established', 'tcp_time_wait']) | to_json }},
+        "metrics_collection_interval": {{ cloudwatch_config.metrics.metrics_collected.netstat.metrics_collection_interval | default(60) }}
+      },
+      "swap": {
+        "measurement": {{ cloudwatch_config.metrics.metrics_collected.swap.measurement | default(['swap_used_percent']) | to_json }},
+        "metrics_collection_interval": {{ cloudwatch_config.metrics.metrics_collected.swap.metrics_collection_interval | default(60) }}
+      }
+    }
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/syslog",
+            "log_group_name": "{{ project_name }}-{{ environment }}-syslog",
+            "log_stream_name": "{instance_id}",
+            "timezone": "UTC"
+          },
+          {
+            "file_path": "/var/log/auth.log",
+            "log_group_name": "{{ project_name }}-{{ environment }}-auth",
+            "log_stream_name": "{instance_id}",
+            "timezone": "UTC"
+          },
+          {
+            "file_path": "/var/log/applications/*.log",
+            "log_group_name": "{{ project_name }}-{{ environment }}-applications",
+            "log_stream_name": "{instance_id}",
+            "timezone": "UTC"
+          }
+{% if 'webservers' in group_names %}
+          ,{
+            "file_path": "/var/log/nginx/access.log",
+            "log_group_name": "{{ project_name }}-{{ environment }}-nginx-access",
+            "log_stream_name": "{instance_id}",
+            "timezone": "UTC"
+          },
+          {
+            "file_path": "/var/log/nginx/error.log",
+            "log_group_name": "{{ project_name }}-{{ environment }}-nginx-error",
+            "log_stream_name": "{instance_id}",
+            "timezone": "UTC"
+          }
+{% endif %}
+{% if 'appservers' in group_names %}
+          ,{
+            "file_path": "/var/log/{{ app_name | default('app') }}/*.log",
+            "log_group_name": "{{ project_name }}-{{ environment }}-app",
+            "log_stream_name": "{instance_id}",
+            "timezone": "UTC"
+          }
+{% endif %}
+        ]
+      }
+    }
+  }
+}

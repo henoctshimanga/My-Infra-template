@@ -1,0 +1,314 @@
+---
+# Webserver role tasks - configures Nginx web servers
+
+- name: Install Nginx and dependencies
+  apt:
+    name:
+      - nginx
+      - nginx-extras
+      - ssl-cert
+      - python3-certbot-nginx
+    state: present
+    update_cache: yes
+  tags:
+    - webserver
+    - nginx
+    - packages
+
+- name: Create nginx user and group
+  group:
+    name: "{{ nginx_user }}"
+    state: present
+  tags:
+    - webserver
+    - nginx
+    - users
+
+- name: Create nginx directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ nginx_user }}"
+    group: "{{ nginx_user }}"
+    mode: '0755'
+  loop:
+    - /var/www/html
+    - /var/log/nginx
+    - /var/cache/nginx
+    - /etc/nginx/sites-available
+    - /etc/nginx/sites-enabled
+    - /etc/nginx/snippets
+    - /etc/nginx/ssl
+  tags:
+    - webserver
+    - nginx
+    - directories
+
+- name: Generate DH parameters for SSL
+  openssl_dhparam:
+    path: /etc/nginx/ssl/dhparam.pem
+    size: 2048
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload nginx
+  tags:
+    - webserver
+    - nginx
+    - ssl
+
+- name: Create self-signed SSL certificate
+  command: >
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048
+    -keyout /etc/nginx/ssl/nginx-selfsigned.key
+    -out /etc/nginx/ssl/nginx-selfsigned.crt
+    -subj "/C=US/ST=State/L=City/O=Organization/CN={{ ansible_default_ipv4.address }}"
+  args:
+    creates: /etc/nginx/ssl/nginx-selfsigned.crt
+  notify: reload nginx
+  tags:
+    - webserver
+    - nginx
+    - ssl
+
+- name: Set permissions on SSL files
+  file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+    mode: '0600'
+  loop:
+    - /etc/nginx/ssl/nginx-selfsigned.key
+    - /etc/nginx/ssl/nginx-selfsigned.crt
+  tags:
+    - webserver
+    - nginx
+    - ssl
+
+- name: Configure main nginx.conf
+  template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: yes
+  notify: reload nginx
+  tags:
+    - webserver
+    - nginx
+    - config
+
+- name: Create SSL configuration snippet
+  template:
+    src: ssl-params.conf.j2
+    dest: /etc/nginx/snippets/ssl-params.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload nginx
+  tags:
+    - webserver
+    - nginx
+    - ssl
+
+- name: Create security headers snippet
+  template:
+    src: security-headers.conf.j2
+    dest: /etc/nginx/snippets/security-headers.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload nginx
+  tags:
+    - webserver
+    - nginx
+    - security
+
+- name: Remove default nginx site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: reload nginx
+  tags:
+    - webserver
+    - nginx
+    - config
+
+- name: Create application site configuration
+  template:
+    src: app-site.conf.j2
+    dest: /etc/nginx/sites-available/{{ app_name | default('app') }}
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload nginx
+  tags:
+    - webserver
+    - nginx
+    - config
+
+- name: Enable application site
+  file:
+    src: /etc/nginx/sites-available/{{ app_name | default('app') }}
+    dest: /etc/nginx/sites-enabled/{{ app_name | default('app') }}
+    state: link
+  notify: reload nginx
+  tags:
+    - webserver
+    - nginx
+    - config
+
+- name: Create health check endpoint configuration
+  copy:
+    content: |
+      server {
+          listen {{ health_check_port | default(8080) }};
+          server_name _;
+          
+          location /health {
+              access_log off;
+              return 200 "healthy\n";
+              add_header Content-Type text/plain;
+          }
+          
+          location /nginx_status {
+              stub_status on;
+              access_log off;
+              allow 127.0.0.1;
+              allow {{ vpc_cidr | default('10.0.0.0/16') }};
+              deny all;
+          }
+      }
+    dest: /etc/nginx/sites-available/health
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload nginx
+  tags:
+    - webserver
+    - nginx
+    - monitoring
+
+- name: Enable health check endpoint
+  file:
+    src: /etc/nginx/sites-available/health
+    dest: /etc/nginx/sites-enabled/health
+    state: link
+  notify: reload nginx
+  tags:
+    - webserver
+    - nginx
+    - monitoring
+
+- name: Create default index page
+  template:
+    src: index.html.j2
+    dest: /var/www/html/index.html
+    owner: "{{ nginx_user }}"
+    group: "{{ nginx_user }}"
+    mode: '0644'
+  tags:
+    - webserver
+    - nginx
+    - content
+
+- name: Test nginx configuration
+  command: nginx -t
+  register: nginx_test
+  changed_when: false
+  failed_when: nginx_test.rc != 0
+  tags:
+    - webserver
+    - nginx
+    - validation
+
+- name: Start and enable nginx
+  systemd:
+    name: nginx
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  tags:
+    - webserver
+    - nginx
+    - services
+
+- name: Configure nginx log rotation
+  template:
+    src: nginx-logrotate.j2
+    dest: /etc/logrotate.d/nginx
+    owner: root
+    group: root
+    mode: '0644'
+  tags:
+    - webserver
+    - nginx
+    - logging
+
+- name: Install nginx monitoring tools
+  apt:
+    name:
+      - nginx-prometheus-exporter
+    state: present
+  when: enable_monitoring | default(true)
+  tags:
+    - webserver
+    - nginx
+    - monitoring
+
+- name: Create nginx monitoring script
+  template:
+    src: nginx-monitor.sh.j2
+    dest: /opt/scripts/nginx-monitor.sh
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - webserver
+    - nginx
+    - monitoring
+
+- name: Setup nginx monitoring cron job
+  cron:
+    name: "Nginx monitoring"
+    job: "/opt/scripts/nginx-monitor.sh >> /var/log/applications/nginx-monitor.log 2>&1"
+    minute: "*/2"
+    hour: "*"
+    user: root
+  when: enable_monitoring | default(true)
+  tags:
+    - webserver
+    - nginx
+    - monitoring
+    - cron
+
+- name: Configure firewall for web services
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - '80'
+    - '443'
+    - "{{ health_check_port | default(8080) }}"
+  when: enable_firewall | default(true)
+  tags:
+    - webserver
+    - nginx
+    - firewall
+
+- name: Set up log forwarding to CloudWatch
+  template:
+    src: nginx-cloudwatch-config.json.j2
+    dest: /opt/aws/amazon-cloudwatch-agent/etc/nginx-cloudwatch-config.json
+    owner: cwagent
+    group: cwagent
+    mode: '0644'
+  when: enable_cloudwatch | default(true)
+  notify: restart amazon-cloudwatch-agent
+  tags:
+    - webserver
+    - nginx
+    - cloudwatch
+

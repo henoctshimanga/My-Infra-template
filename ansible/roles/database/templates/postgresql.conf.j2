@@ -1,0 +1,264 @@
+# {{ ansible_managed }}
+# PostgreSQL configuration file template
+# Note: This is primarily for reference as RDS manages most PostgreSQL settings
+
+#------------------------------------------------------------------------------
+# CONNECTIONS AND AUTHENTICATION
+#------------------------------------------------------------------------------
+
+# Connection Settings
+listen_addresses = '{{ postgresql_listen_addresses | default("localhost") }}'
+port = {{ postgresql_port | default(5432) }}
+max_connections = {{ postgresql_max_connections | default(100) }}
+superuser_reserved_connections = {{ postgresql_superuser_reserved_connections | default(3) }}
+
+# Authentication
+ssl = {{ postgresql_ssl | default('on') }}
+ssl_cert_file = 'server.crt'
+ssl_key_file = 'server.key'
+ssl_ca_file = ''
+ssl_crl_file = ''
+
+# TCP settings
+tcp_keepalives_idle = {{ postgresql_tcp_keepalives_idle | default(600) }}
+tcp_keepalives_interval = {{ postgresql_tcp_keepalives_interval | default(30) }}
+tcp_keepalives_count = {{ postgresql_tcp_keepalives_count | default(3) }}
+
+#------------------------------------------------------------------------------
+# RESOURCE USAGE (except WAL)
+#------------------------------------------------------------------------------
+
+# Memory
+shared_buffers = {{ postgresql_shared_buffers | default('128MB') }}
+huge_pages = {{ postgresql_huge_pages | default('try') }}
+temp_buffers = {{ postgresql_temp_buffers | default('8MB') }}
+max_prepared_transactions = {{ postgresql_max_prepared_transactions | default(0) }}
+
+work_mem = {{ postgresql_work_mem | default('4MB') }}
+maintenance_work_mem = {{ postgresql_maintenance_work_mem | default('64MB') }}
+replacement_sort_tuples = {{ postgresql_replacement_sort_tuples | default(150000) }}
+autovacuum_work_mem = {{ postgresql_autovacuum_work_mem | default(-1) }}
+max_stack_depth = {{ postgresql_max_stack_depth | default('2MB') }}
+dynamic_shared_memory_type = {{ postgresql_dynamic_shared_memory_type | default('posix') }}
+
+# Disk
+temp_file_limit = {{ postgresql_temp_file_limit | default(-1) }}
+
+# Kernel Resource Usage
+max_files_per_process = {{ postgresql_max_files_per_process | default(1000) }}
+
+#------------------------------------------------------------------------------
+# WRITE AHEAD LOG
+#------------------------------------------------------------------------------
+
+# Settings
+wal_level = {{ postgresql_wal_level | default('replica') }}
+fsync = {{ postgresql_fsync | default('on') }}
+synchronous_commit = {{ postgresql_synchronous_commit | default('on') }}
+wal_sync_method = {{ postgresql_wal_sync_method | default('fsync') }}
+full_page_writes = {{ postgresql_full_page_writes | default('on') }}
+wal_compression = {{ postgresql_wal_compression | default('off') }}
+wal_log_hints = {{ postgresql_wal_log_hints | default('off') }}
+wal_buffers = {{ postgresql_wal_buffers | default('16MB') }}
+wal_writer_delay = {{ postgresql_wal_writer_delay | default('200ms') }}
+wal_writer_flush_after = {{ postgresql_wal_writer_flush_after | default('1MB') }}
+
+commit_delay = {{ postgresql_commit_delay | default(0) }}
+commit_siblings = {{ postgresql_commit_siblings | default(5) }}
+
+# Checkpoints
+checkpoint_timeout = {{ postgresql_checkpoint_timeout | default('5min') }}
+max_wal_size = {{ postgresql_max_wal_size | default('1GB') }}
+min_wal_size = {{ postgresql_min_wal_size | default('80MB') }}
+checkpoint_completion_target = {{ postgresql_checkpoint_completion_target | default(0.9) }}
+checkpoint_flush_after = {{ postgresql_checkpoint_flush_after | default('256kB') }}
+checkpoint_warning = {{ postgresql_checkpoint_warning | default('30s') }}
+
+# Archiving
+archive_mode = {{ postgresql_archive_mode | default('off') }}
+archive_command = '{{ postgresql_archive_command | default("") }}'
+archive_timeout = {{ postgresql_archive_timeout | default(0) }}
+
+#------------------------------------------------------------------------------
+# REPLICATION
+#------------------------------------------------------------------------------
+
+# Sending Server(s)
+max_wal_senders = {{ postgresql_max_wal_senders | default(10) }}
+wal_keep_segments = {{ postgresql_wal_keep_segments | default(0) }}
+wal_sender_timeout = {{ postgresql_wal_sender_timeout | default('60s') }}
+max_replication_slots = {{ postgresql_max_replication_slots | default(10) }}
+track_commit_timestamp = {{ postgresql_track_commit_timestamp | default('off') }}
+
+# Standby Servers
+hot_standby = {{ postgresql_hot_standby | default('on') }}
+max_standby_archive_delay = {{ postgresql_max_standby_archive_delay | default('30s') }}
+max_standby_streaming_delay = {{ postgresql_max_standby_streaming_delay | default('30s') }}
+wal_receiver_status_interval = {{ postgresql_wal_receiver_status_interval | default('10s') }}
+hot_standby_feedback = {{ postgresql_hot_standby_feedback | default('off') }}
+wal_receiver_timeout = {{ postgresql_wal_receiver_timeout | default('60s') }}
+wal_retrieve_retry_interval = {{ postgresql_wal_retrieve_retry_interval | default('5s') }}
+
+#------------------------------------------------------------------------------
+# QUERY TUNING
+#------------------------------------------------------------------------------
+
+# Planner Method Configuration
+enable_bitmapscan = {{ postgresql_enable_bitmapscan | default('on') }}
+enable_hashagg = {{ postgresql_enable_hashagg | default('on') }}
+enable_hashjoin = {{ postgresql_enable_hashjoin | default('on') }}
+enable_indexscan = {{ postgresql_enable_indexscan | default('on') }}
+enable_indexonlyscan = {{ postgresql_enable_indexonlyscan | default('on') }}
+enable_material = {{ postgresql_enable_material | default('on') }}
+enable_mergejoin = {{ postgresql_enable_mergejoin | default('on') }}
+enable_nestloop = {{ postgresql_enable_nestloop | default('on') }}
+enable_seqscan = {{ postgresql_enable_seqscan | default('on') }}
+enable_sort = {{ postgresql_enable_sort | default('on') }}
+enable_tidscan = {{ postgresql_enable_tidscan | default('on') }}
+
+# Planner Cost Constants
+seq_page_cost = {{ postgresql_seq_page_cost | default(1.0) }}
+random_page_cost = {{ postgresql_random_page_cost | default(4.0) }}
+cpu_tuple_cost = {{ postgresql_cpu_tuple_cost | default(0.01) }}
+cpu_index_tuple_cost = {{ postgresql_cpu_index_tuple_cost | default(0.005) }}
+cpu_operator_cost = {{ postgresql_cpu_operator_cost | default(0.0025) }}
+parallel_tuple_cost = {{ postgresql_parallel_tuple_cost | default(0.1) }}
+parallel_setup_cost = {{ postgresql_parallel_setup_cost | default(1000.0) }}
+
+effective_cache_size = {{ postgresql_effective_cache_size | default('1GB') }}
+
+# Genetic Query Optimizer
+geqo = {{ postgresql_geqo | default('on') }}
+geqo_threshold = {{ postgresql_geqo_threshold | default(12) }}
+geqo_effort = {{ postgresql_geqo_effort | default(5) }}
+geqo_pool_size = {{ postgresql_geqo_pool_size | default(0) }}
+geqo_generations = {{ postgresql_geqo_generations | default(0) }}
+geqo_selection_bias = {{ postgresql_geqo_selection_bias | default(2.0) }}
+geqo_seed = {{ postgresql_geqo_seed | default(0.0) }}
+
+# Other Planner Options
+default_statistics_target = {{ postgresql_default_statistics_target | default(100) }}
+constraint_exclusion = {{ postgresql_constraint_exclusion | default('partition') }}
+cursor_tuple_fraction = {{ postgresql_cursor_tuple_fraction | default(0.1) }}
+from_collapse_limit = {{ postgresql_from_collapse_limit | default(8) }}
+join_collapse_limit = {{ postgresql_join_collapse_limit | default(8) }}
+force_parallel_mode = {{ postgresql_force_parallel_mode | default('off') }}
+
+#------------------------------------------------------------------------------
+# ERROR REPORTING AND LOGGING
+#------------------------------------------------------------------------------
+
+# Where to Log
+log_destination = '{{ postgresql_log_destination | default("stderr") }}'
+logging_collector = {{ postgresql_logging_collector | default('off') }}
+log_directory = '{{ postgresql_log_directory | default("log") }}'
+log_filename = '{{ postgresql_log_filename | default("postgresql-%Y-%m-%d_%H%M%S.log") }}'
+log_file_mode = {{ postgresql_log_file_mode | default('0600') }}
+log_truncate_on_rotation = {{ postgresql_log_truncate_on_rotation | default('off') }}
+log_rotation_age = {{ postgresql_log_rotation_age | default('1d') }}
+log_rotation_size = {{ postgresql_log_rotation_size | default('10MB') }}
+
+# When to Log
+log_min_messages = {{ postgresql_log_min_messages | default('warning') }}
+log_min_error_statement = {{ postgresql_log_min_error_statement | default('error') }}
+log_min_duration_statement = {{ postgresql_log_min_duration_statement | default(1000) }}
+
+# What to Log
+debug_print_parse = {{ postgresql_debug_print_parse | default('off') }}
+debug_print_rewritten = {{ postgresql_debug_print_rewritten | default('off') }}
+debug_print_plan = {{ postgresql_debug_print_plan | default('off') }}
+debug_pretty_print = {{ postgresql_debug_pretty_print | default('on') }}
+log_checkpoints = {{ postgresql_log_checkpoints | default('off') }}
+log_connections = {{ postgresql_log_connections | default('off') }}
+log_disconnections = {{ postgresql_log_disconnections | default('off') }}
+log_duration = {{ postgresql_log_duration | default('off') }}
+log_error_verbosity = {{ postgresql_log_error_verbosity | default('default') }}
+log_hostname = {{ postgresql_log_hostname | default('off') }}
+log_line_prefix = '{{ postgresql_log_line_prefix | default("%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h ") }}'
+log_lock_waits = {{ postgresql_log_lock_waits | default('off') }}
+log_statement = '{{ postgresql_log_statement | default("none") }}'
+log_replication_commands = {{ postgresql_log_replication_commands | default('off') }}
+log_temp_files = {{ postgresql_log_temp_files | default(-1) }}
+log_timezone = '{{ postgresql_log_timezone | default("UTC") }}'
+
+#------------------------------------------------------------------------------
+# RUNTIME STATISTICS
+#------------------------------------------------------------------------------
+
+# Query/Index Statistics Collector
+track_activities = {{ postgresql_track_activities | default('on') }}
+track_counts = {{ postgresql_track_counts | default('on') }}
+track_io_timing = {{ postgresql_track_io_timing | default('off') }}
+track_functions = {{ postgresql_track_functions | default('none') }}
+track_activity_query_size = {{ postgresql_track_activity_query_size | default(1024) }}
+stats_temp_directory = '{{ postgresql_stats_temp_directory | default("pg_stat_tmp") }}'
+
+# Statistics Monitoring
+log_parser_stats = {{ postgresql_log_parser_stats | default('off') }}
+log_planner_stats = {{ postgresql_log_planner_stats | default('off') }}
+log_executor_stats = {{ postgresql_log_executor_stats | default('off') }}
+log_statement_stats = {{ postgresql_log_statement_stats | default('off') }}
+
+#------------------------------------------------------------------------------
+# AUTOVACUUM PARAMETERS
+#------------------------------------------------------------------------------
+
+autovacuum = {{ postgresql_autovacuum | default('on') }}
+log_autovacuum_min_duration = {{ postgresql_log_autovacuum_min_duration | default(-1) }}
+autovacuum_max_workers = {{ postgresql_autovacuum_max_workers | default(3) }}
+autovacuum_naptime = {{ postgresql_autovacuum_naptime | default('1min') }}
+autovacuum_vacuum_threshold = {{ postgresql_autovacuum_vacuum_threshold | default(50) }}
+autovacuum_analyze_threshold = {{ postgresql_autovacuum_analyze_threshold | default(50) }}
+autovacuum_vacuum_scale_factor = {{ postgresql_autovacuum_vacuum_scale_factor | default(0.2) }}
+autovacuum_analyze_scale_factor = {{ postgresql_autovacuum_analyze_scale_factor | default(0.1) }}
+autovacuum_freeze_max_age = {{ postgresql_autovacuum_freeze_max_age | default(200000000) }}
+autovacuum_multixact_freeze_max_age = {{ postgresql_autovacuum_multixact_freeze_max_age | default(400000000) }}
+autovacuum_vacuum_cost_delay = {{ postgresql_autovacuum_vacuum_cost_delay | default('20ms') }}
+autovacuum_vacuum_cost_limit = {{ postgresql_autovacuum_vacuum_cost_limit | default(-1) }}
+
+#------------------------------------------------------------------------------
+# CLIENT CONNECTION DEFAULTS
+#------------------------------------------------------------------------------
+
+# Statement Behavior
+search_path = '{{ postgresql_search_path | default("\"$user\", public") }}'
+default_tablespace = '{{ postgresql_default_tablespace | default("") }}'
+temp_tablespaces = '{{ postgresql_temp_tablespaces | default("") }}'
+check_function_bodies = {{ postgresql_check_function_bodies | default('on') }}
+default_transaction_isolation = '{{ postgresql_default_transaction_isolation | default("read committed") }}'
+default_transaction_read_only = {{ postgresql_default_transaction_read_only | default('off') }}
+default_transaction_deferrable = {{ postgresql_default_transaction_deferrable | default('off') }}
+session_replication_role = '{{ postgresql_session_replication_role | default("origin") }}'
+statement_timeout = {{ postgresql_statement_timeout | default(0) }}
+lock_timeout = {{ postgresql_lock_timeout | default(0) }}
+idle_in_transaction_session_timeout = {{ postgresql_idle_in_transaction_session_timeout | default(0) }}
+vacuum_freeze_min_age = {{ postgresql_vacuum_freeze_min_age | default(50000000) }}
+vacuum_freeze_table_age = {{ postgresql_vacuum_freeze_table_age | default(150000000) }}
+vacuum_multixact_freeze_min_age = {{ postgresql_vacuum_multixact_freeze_min_age | default(5000000) }}
+vacuum_multixact_freeze_table_age = {{ postgresql_vacuum_multixact_freeze_table_age | default(150000000) }}
+bytea_output = '{{ postgresql_bytea_output | default("hex") }}'
+xmlbinary = '{{ postgresql_xmlbinary | default("base64") }}'
+xmloption = '{{ postgresql_xmloption | default("content") }}'
+gin_fuzzy_search_limit = {{ postgresql_gin_fuzzy_search_limit | default(0) }}
+
+# Locale and Formatting
+datestyle = '{{ postgresql_datestyle | default("iso, mdy") }}'
+intervalstyle = '{{ postgresql_intervalstyle | default("postgres") }}'
+timezone = '{{ postgresql_timezone | default("UTC") }}'
+timezone_abbreviations = '{{ postgresql_timezone_abbreviations | default("Default") }}'
+extra_float_digits = {{ postgresql_extra_float_digits | default(0) }}
+client_encoding = {{ postgresql_client_encoding | default('sql_ascii') }}
+lc_messages = '{{ postgresql_lc_messages | default("en_US.UTF-8") }}'
+lc_monetary = '{{ postgresql_lc_monetary | default("en_US.UTF-8") }}'
+lc_numeric = '{{ postgresql_lc_numeric | default("en_US.UTF-8") }}'
+lc_time = '{{ postgresql_lc_time | default("en_US.UTF-8") }}'
+default_text_search_config = '{{ postgresql_default_text_search_config | default("pg_catalog.english") }}'
+
+# Shared Library Preloading
+shared_preload_libraries = '{{ postgresql_shared_preload_libraries | default("") }}'
+local_preload_libraries = '{{ postgresql_local_preload_libraries | default("") }}'
+session_preload_libraries = '{{ postgresql_session_preload_libraries | default("") }}'
+
+# Other Defaults
+dynamic_library_path = '{{ postgresql_dynamic_library_path | default("$libdir") }}'
+

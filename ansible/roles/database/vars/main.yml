@@ -1,0 +1,124 @@
+---
+# Database role variables
+
+# PostgreSQL client configuration
+db_client_packages:
+  - postgresql-client-15
+  - python3-psycopg2
+  - python3-boto3
+  - python3-requests
+  - awscli
+
+# Database connection configuration (for RDS)
+db_engine: "{{ hostvars['database']['db_engine'] | default('postgres') }}"
+database_host: "{{ hostvars['database']['ansible_host'] | default('localhost') }}"
+database_port: "{{ hostvars['database']['db_port'] | default(5432) }}"
+database_name: "{{ hostvars['database']['db_name'] | default('appdb') }}"
+db_username: "{{ db_master_username | default('dbadmin') }}"
+
+# Monitoring configuration
+enable_db_monitoring: true
+enable_performance_reports: true
+monitoring_interval: 300  # 5 minutes
+connection_test_interval: 300  # 5 minutes
+metrics_collection_interval: 600  # 10 minutes
+
+# Backup configuration
+backup_retention_days: 7
+backup_verification_enabled: true
+enable_backup_monitoring: true
+
+# CloudWatch integration
+enable_cloudwatch: true
+cloudwatch_namespace: "{{ project_name }}/{{ environment }}/Database"
+cloudwatch_metrics:
+  - name: "ConnectionCount"
+    unit: "Count"
+  - name: "QueryDuration"
+    unit: "Seconds"
+  - name: "DatabaseSize"
+    unit: "Bytes"
+  - name: "ActiveConnections"
+    unit: "Count"
+
+# PostgreSQL-specific settings (for reference/monitoring)
+postgresql_version: "15"
+postgresql_port: 5432
+postgresql_max_connections: 100
+postgresql_shared_buffers: "128MB"
+postgresql_effective_cache_size: "1GB"
+postgresql_maintenance_work_mem: "64MB"
+postgresql_checkpoint_completion_target: 0.9
+postgresql_wal_buffers: "16MB"
+postgresql_default_statistics_target: 100
+
+# Security and monitoring
+postgresql_listen_addresses: "*"
+postgresql_ssl: true
+postgresql_log_connections: true
+postgresql_log_disconnections: true
+postgresql_log_statement: "all"
+postgresql_log_line_prefix: "%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h "
+
+# Performance monitoring queries
+performance_queries:
+  - name: "slow_queries"
+    query: |
+      SELECT query, calls, total_time, mean_time, rows 
+      FROM pg_stat_statements 
+      WHERE mean_time > 1000 
+      ORDER BY mean_time DESC 
+      LIMIT 10;
+  - name: "database_size"
+    query: |
+      SELECT datname, pg_size_pretty(pg_database_size(datname)) as size 
+      FROM pg_database 
+      WHERE datistemplate = false;
+  - name: "table_sizes"
+    query: |
+      SELECT schemaname, tablename, 
+             pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size
+      FROM pg_tables 
+      WHERE schemaname NOT IN ('information_schema', 'pg_catalog')
+      ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC 
+      LIMIT 10;
+  - name: "active_connections"
+    query: |
+      SELECT count(*) as active_connections 
+      FROM pg_stat_activity 
+      WHERE state = 'active';
+
+# MySQL-specific settings (if using MySQL)
+mysql_port: 3306
+mysql_max_connections: 100
+mysql_innodb_buffer_pool_size: "128M"
+mysql_query_cache_type: 1
+mysql_query_cache_size: "16M"
+mysql_slow_query_log: 1
+mysql_long_query_time: 2
+
+# Log rotation settings
+log_retention_days: 30
+log_max_size: "100M"
+log_compress: true
+
+# Maintenance settings
+maintenance_window_start: "02:00"
+maintenance_window_end: "04:00"
+vacuum_schedule: "0 1 * * 0"  # Weekly on Sunday at 1 AM
+analyze_schedule: "0 0 * * *"  # Daily at midnight
+
+# Alerting thresholds
+alert_thresholds:
+  connection_count: 80  # percentage of max connections
+  cpu_utilization: 80   # percentage
+  memory_utilization: 85  # percentage
+  disk_usage: 85        # percentage
+  slow_query_threshold: 5000  # milliseconds
+  replication_lag: 300  # seconds
+
+# S3 backup configuration
+s3_backup_bucket: "{{ project_name }}-{{ environment }}-db-backups"
+s3_backup_region: "{{ aws_region }}"
+s3_backup_encryption: true
+

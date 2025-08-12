@@ -1,0 +1,212 @@
+# {{ ansible_managed }}
+# Application site configuration for {{ app_name | default('app') }}
+
+# Upstream configuration for application servers
+upstream backend {
+    # Load balancing method
+    least_conn;
+    
+    # Application servers
+{% if upstream_servers is defined and upstream_servers | length > 0 %}
+{% for server in upstream_servers %}
+    server {{ hostvars[server]['ansible_host'] | default(server) }}:{{ app_port | default(3000) }} max_fails=3 fail_timeout=30s;
+{% endfor %}
+{% else %}
+    # Fallback to localhost if no upstream servers defined
+    server 127.0.0.1:{{ app_port | default(3000) }} max_fails=3 fail_timeout=30s;
+{% endif %}
+    
+    # Keep alive connections
+    keepalive 32;
+}
+
+# Rate limiting zones
+{% if rate_limit_zone is defined %}
+limit_req_zone {{ rate_limit_zone }};
+{% endif %}
+
+# Main server block
+server {
+    listen 80;
+    listen [::]:80;
+    
+    server_name {{ ansible_default_ipv4.address }} {{ inventory_hostname }};
+    server_tokens off;
+    
+    # Security headers
+    include snippets/security-headers.conf;
+    
+    # Logging
+    access_log /var/log/nginx/access.log detailed;
+    error_log /var/log/nginx/error.log warn;
+    
+    # Rate limiting
+{% if rate_limit_zone is defined %}
+    limit_req zone=limit burst={{ rate_limit_burst | default(20) }}{% if rate_limit_nodelay | default(true) %} nodelay{% endif %};
+{% endif %}
+    
+    # Root location - proxy to application
+    location / {
+        # Proxy settings
+        proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        
+        # Timeouts
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+        
+        # Buffer settings
+        proxy_buffering on;
+        proxy_buffer_size 4k;
+        proxy_buffers 8 4k;
+        proxy_busy_buffers_size 8k;
+        
+        # Keep alive
+        proxy_set_header Connection "";
+    }
+    
+    # Health check endpoint (direct)
+    location /health {
+        access_log off;
+        proxy_pass http://backend/health;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 5s;
+    }
+    
+    # Static assets (if any)
+    location ~* \.(css|js|png|jpg|jpeg|gif|ico|svg)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        add_header Vary Accept-Encoding;
+        
+        # Try to serve file directly, fallback to app
+        try_files $uri @app;
+    }
+    
+    # Fallback for static files
+    location @app {
+        proxy_pass http://backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    
+    # API routes (if needed)
+    location /api/ {
+        proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # API specific timeouts
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+        
+        # Rate limiting for API (stricter)
+{% if rate_limit_zone is defined %}
+        limit_req zone=limit burst=5 nodelay;
+{% endif %}
+    }
+    
+    # Deny access to sensitive files
+    location ~ /\. {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+    
+    location ~ \.(ini|conf|yaml|yml)$ {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+    
+    # robots.txt
+    location = /robots.txt {
+        add_header Content-Type text/plain;
+        return 200 "User-agent: *\nDisallow: /\n";
+        access_log off;
+    }
+    
+    # favicon.ico
+    location = /favicon.ico {
+        access_log off;
+        log_not_found off;
+        expires 1y;
+        add_header Cache-Control "public";
+    }
+}
+
+# HTTPS server block (if SSL is enabled)
+{% if ssl_certificate is defined and ssl_certificate_key is defined %}
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    
+    server_name {{ ansible_default_ipv4.address }} {{ inventory_hostname }};
+    server_tokens off;
+    
+    # SSL configuration
+    include snippets/ssl-params.conf;
+    ssl_certificate {{ ssl_certificate }};
+    ssl_certificate_key {{ ssl_certificate_key }};
+    
+    # Security headers
+    include snippets/security-headers.conf;
+    
+    # Add HSTS header for HTTPS
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    
+    # Same location blocks as HTTP server
+    # ... (locations would be identical to HTTP block)
+    
+    # Root location - proxy to application
+    location / {
+        proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_cache_bypass $http_upgrade;
+        
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+    
+    # Health check
+    location /health {
+        access_log off;
+        proxy_pass http://backend/health;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+
+# HTTP to HTTPS redirect
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ ansible_default_ipv4.address }} {{ inventory_hostname }};
+    
+    return 301 https://$server_name$request_uri;
+}
+{% endif %}

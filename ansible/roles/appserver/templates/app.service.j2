@@ -1,0 +1,52 @@
+# {{ ansible_managed }}
+# Systemd service file for {{ app_name }}
+
+[Unit]
+Description={{ app_name }} - Node.js application
+Documentation=https://pm2.keymetrics.io/
+After=network.target
+
+[Service]
+Type=notify
+User={{ app_user }}
+Group={{ app_group }}
+WorkingDirectory={{ app_home }}
+Environment=NODE_ENV={{ node_env | default(environment) }}
+Environment=PORT={{ app_port }}
+Environment=LOG_LEVEL={{ log_level | default('info') }}
+{% if database_host is defined %}
+Environment=DATABASE_HOST={{ database_host }}
+Environment=DATABASE_PORT={{ database_port | default(5432) }}
+Environment=DATABASE_NAME={{ database_name | default('appdb') }}
+{% endif %}
+
+# PM2 specific settings
+ExecStart=/usr/bin/pm2 start {{ app_home }}/ecosystem.config.js --no-daemon
+ExecReload=/usr/bin/pm2 reload {{ app_name }}
+ExecStop=/usr/bin/pm2 stop {{ app_name }}
+
+# Process management
+Restart=always
+RestartSec=3
+KillMode=process
+TimeoutStopSec=300
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths={{ app_home }} /var/log/{{ app_name }} /tmp
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier={{ app_name }}
+
+[Install]
+WantedBy=multi-user.target
+

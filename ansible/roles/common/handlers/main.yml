@@ -1,0 +1,52 @@
+---
+# Common handlers - service restarts and reloads
+
+- name: restart rsyslog
+  systemd:
+    name: rsyslog
+    state: restarted
+    daemon_reload: yes
+
+- name: restart unattended-upgrades
+  systemd:
+    name: unattended-upgrades
+    state: restarted
+    daemon_reload: yes
+
+- name: restart amazon-cloudwatch-agent
+  systemd:
+    name: amazon-cloudwatch-agent
+    state: restarted
+    daemon_reload: yes
+
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+
+- name: restart networking
+  systemd:
+    name: systemd-networkd
+    state: restarted
+
+- name: restart ssh
+  systemd:
+    name: ssh
+    state: restarted
+
+- name: restart cron
+  systemd:
+    name: cron
+    state: restarted
+
+- name: update ca-certificates
+  command: update-ca-certificates
+  
+- name: rebuild initramfs
+  command: update-initramfs -u
+
+- name: restart ntp
+  systemd:
+    name: ntp
+    state: restarted
+  when: ansible_service_mgr == "systemd"
+

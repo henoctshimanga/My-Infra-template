@@ -1,0 +1,66 @@
+---
+# Database handlers
+
+- name: restart postgresql
+  systemd:
+    name: postgresql
+    state: restarted
+    daemon_reload: yes
+  listen: "restart postgresql"
+  when: "'databases' in group_names and ansible_service_mgr == 'systemd'"
+
+- name: reload postgresql
+  systemd:
+    name: postgresql
+    state: reloaded
+  listen: "reload postgresql"
+  when: "'databases' in group_names and ansible_service_mgr == 'systemd'"
+
+- name: restart mysql
+  systemd:
+    name: mysql
+    state: restarted
+    daemon_reload: yes
+  listen: "restart mysql"
+  when: "'databases' in group_names and db_engine == 'mysql'"
+
+- name: reload mysql
+  systemd:
+    name: mysql
+    state: reloaded
+  listen: "reload mysql"
+  when: "'databases' in group_names and db_engine == 'mysql'"
+
+- name: restart redis
+  systemd:
+    name: redis-server
+    state: restarted
+    daemon_reload: yes
+  listen: "restart redis"
+
+- name: restart amazon-cloudwatch-agent
+  systemd:
+    name: amazon-cloudwatch-agent
+    state: restarted
+    daemon_reload: yes
+  listen: "restart amazon-cloudwatch-agent"
+
+- name: update db statistics
+  shell: |
+    {% if db_engine == 'postgres' %}
+    psql -h {{ database_host }} -U {{ db_username }} -d {{ database_name }} -c "ANALYZE;"
+    {% elif db_engine == 'mysql' %}
+    mysql -h {{ database_host }} -u {{ db_username }} -e "ANALYZE TABLE information_schema.tables;"
+    {% endif %}
+  listen: "update db statistics"
+  ignore_errors: yes
+
+- name: vacuum database
+  shell: |
+    {% if db_engine == 'postgres' %}
+    psql -h {{ database_host }} -U {{ db_username }} -d {{ database_name }} -c "VACUUM ANALYZE;"
+    {% endif %}
+  listen: "vacuum database"
+  ignore_errors: yes
+  when: db_engine == 'postgres'
+

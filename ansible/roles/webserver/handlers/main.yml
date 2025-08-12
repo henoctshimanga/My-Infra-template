@@ -1,0 +1,34 @@
+---
+# Webserver handlers
+
+- name: reload nginx
+  systemd:
+    name: nginx
+    state: reloaded
+  listen: "reload nginx"
+
+- name: restart nginx
+  systemd:
+    name: nginx
+    state: restarted
+    daemon_reload: yes
+  listen: "restart nginx"
+
+- name: restart amazon-cloudwatch-agent
+  systemd:
+    name: amazon-cloudwatch-agent
+    state: restarted
+    daemon_reload: yes
+  listen: "restart amazon-cloudwatch-agent"
+
+- name: test nginx configuration
+  command: nginx -t
+  register: nginx_syntax_check
+  failed_when: nginx_syntax_check.rc != 0
+  listen: "test nginx config"
+
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+  listen: "reload systemd"
+

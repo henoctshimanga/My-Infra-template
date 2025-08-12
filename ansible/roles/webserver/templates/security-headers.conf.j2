@@ -1,0 +1,84 @@
+# {{ ansible_managed }}
+# Security headers configuration
+
+# X-Frame-Options: Prevents clickjacking attacks
+add_header X-Frame-Options "{{ security_headers_x_frame_options | default('DENY') }}" always;
+
+# X-Content-Type-Options: Prevents MIME type sniffing
+add_header X-Content-Type-Options "nosniff" always;
+
+# X-XSS-Protection: Enables XSS filtering
+add_header X-XSS-Protection "{{ security_headers_x_xss_protection | default('1; mode=block') }}" always;
+
+# Referrer Policy: Controls how much referrer information is included
+add_header Referrer-Policy "{{ security_headers_referrer_policy | default('strict-origin-when-cross-origin') }}" always;
+
+# Content Security Policy: Helps prevent XSS attacks
+{% if security_headers_csp is defined %}
+add_header Content-Security-Policy "{{ security_headers_csp }}" always;
+{% else %}
+add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none';" always;
+{% endif %}
+
+# Permissions Policy: Controls which browser features can be used
+{% if security_headers_permissions_policy is defined %}
+add_header Permissions-Policy "{{ security_headers_permissions_policy }}" always;
+{% else %}
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), vr=(), accelerometer=(), gyroscope=(), magnetometer=()" always;
+{% endif %}
+
+# X-Permitted-Cross-Domain-Policies: Restricts Adobe Flash and PDF cross-domain requests
+add_header X-Permitted-Cross-Domain-Policies "{{ security_headers_cross_domain_policies | default('none') }}" always;
+
+# Expect-CT: Certificate Transparency monitoring and enforcement
+{% if ssl_certificate is defined %}
+add_header Expect-CT "max-age={{ security_headers_expect_ct_max_age | default(86400) }}{% if security_headers_expect_ct_enforce | default(false) %}, enforce{% endif %}" always;
+{% endif %}
+
+# Cross-Origin Embedder Policy: Controls cross-origin resource embedding
+add_header Cross-Origin-Embedder-Policy "{{ security_headers_coep | default('require-corp') }}" always;
+
+# Cross-Origin Opener Policy: Isolates browsing context
+add_header Cross-Origin-Opener-Policy "{{ security_headers_coop | default('same-origin') }}" always;
+
+# Cross-Origin Resource Policy: Controls cross-origin resource access
+add_header Cross-Origin-Resource-Policy "{{ security_headers_corp | default('same-origin') }}" always;
+
+# Server header removal (already handled by server_tokens off, but additional safety)
+more_clear_headers 'Server';
+more_clear_headers 'X-Powered-By';
+
+# Custom headers for application identification (if needed)
+{% if environment is defined %}
+add_header X-Environment "{{ environment }}" always;
+{% endif %}
+
+{% if project_name is defined %}
+add_header X-Application "{{ project_name }}" always;
+{% endif %}
+
+# Timing information (remove for production)
+{% if environment != 'prod' %}
+add_header X-Response-Time $request_time always;
+{% endif %}
+
+# Cache control for security-sensitive responses
+location ~* \.(json|xml)$ {
+    add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    add_header Pragma "no-cache" always;
+    add_header Expires "0" always;
+}
+
+# Additional security for admin/api endpoints
+location ~* ^/(admin|api|auth)/ {
+    # Stricter CSP for admin areas
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none';" always;
+    
+    # No caching for sensitive endpoints
+    add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    add_header Pragma "no-cache" always;
+    add_header Expires "0" always;
+    
+    # Additional security headers for admin
+    add_header X-Admin-Access "restricted" always;
+}

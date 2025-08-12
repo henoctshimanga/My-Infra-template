@@ -1,0 +1,237 @@
+---
+# Database role tasks - mainly for RDS monitoring and client setup
+# Since we're using managed RDS, most DB administration is handled by AWS
+
+- name: Install database client packages
+  apt:
+    name: "{{ db_client_packages }}"
+    state: present
+    update_cache: yes
+  tags:
+    - database
+    - packages
+
+- name: Install Python database libraries
+  pip:
+    name:
+      - psycopg2-binary
+      - boto3
+      - pymongo
+      - redis
+    state: present
+  tags:
+    - database
+    - python
+    - packages
+
+- name: Create database scripts directory
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - /opt/db-tools
+    - /opt/db-tools/backups
+    - /opt/db-tools/monitoring
+    - /opt/db-tools/maintenance
+    - /var/log/db-tools
+  tags:
+    - database
+    - directories
+
+- name: Create database connection configuration
+  template:
+    src: db-config.json.j2
+    dest: /opt/db-tools/db-config.json
+    owner: root
+    group: root
+    mode: '0600'
+  tags:
+    - database
+    - config
+
+- name: Create database connection test script
+  template:
+    src: db-test.py.j2
+    dest: /opt/db-tools/db-test.py
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - database
+    - monitoring
+
+- name: Create database monitoring script
+  template:
+    src: db-monitor.py.j2
+    dest: /opt/db-tools/monitoring/db-monitor.py
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - database
+    - monitoring
+
+- name: Create backup verification script
+  template:
+    src: backup-verify.sh.j2
+    dest: /opt/db-tools/backups/backup-verify.sh
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - database
+    - backup
+
+- name: Create database maintenance script
+  template:
+    src: db-maintenance.sh.j2
+    dest: /opt/db-tools/maintenance/db-maintenance.sh
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - database
+    - maintenance
+
+- name: Create database metrics collection script
+  template:
+    src: db-metrics.py.j2
+    dest: /opt/db-tools/monitoring/db-metrics.py
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - database
+    - monitoring
+
+- name: Setup database monitoring cron jobs
+  cron:
+    name: "{{ item.name }}"
+    job: "{{ item.job }}"
+    minute: "{{ item.minute }}"
+    hour: "{{ item.hour }}"
+    user: root
+    state: "{{ item.state | default('present') }}"
+  loop:
+    - name: "Database connection test"
+      job: "/opt/db-tools/db-test.py >> /var/log/db-tools/connection-test.log 2>&1"
+      minute: "*/5"
+      hour: "*"
+    - name: "Database monitoring"
+      job: "/opt/db-tools/monitoring/db-monitor.py >> /var/log/db-tools/monitoring.log 2>&1"
+      minute: "*/15"
+      hour: "*"
+    - name: "Database metrics collection"
+      job: "/opt/db-tools/monitoring/db-metrics.py >> /var/log/db-tools/metrics.log 2>&1"
+      minute: "*/10"
+      hour: "*"
+    - name: "Backup verification"
+      job: "/opt/db-tools/backups/backup-verify.sh >> /var/log/db-tools/backup-verify.log 2>&1"
+      minute: "0"
+      hour: "6"
+    - name: "Database maintenance"
+      job: "/opt/db-tools/maintenance/db-maintenance.sh >> /var/log/db-tools/maintenance.log 2>&1"
+      minute: "0"
+      hour: "2"
+  when: enable_db_monitoring | default(true)
+  tags:
+    - database
+    - monitoring
+    - cron
+
+- name: Configure log rotation for database tools
+  template:
+    src: db-tools-logrotate.j2
+    dest: /etc/logrotate.d/db-tools
+    owner: root
+    group: root
+    mode: '0644'
+  tags:
+    - database
+    - logging
+
+- name: Create CloudWatch custom metrics script
+  template:
+    src: cloudwatch-metrics.py.j2
+    dest: /opt/db-tools/monitoring/cloudwatch-metrics.py
+    owner: root
+    group: root
+    mode: '0755'
+  when: enable_cloudwatch | default(true)
+  tags:
+    - database
+    - cloudwatch
+    - monitoring
+
+- name: Setup CloudWatch custom metrics cron job
+  cron:
+    name: "CloudWatch database metrics"
+    job: "/opt/db-tools/monitoring/cloudwatch-metrics.py >> /var/log/db-tools/cloudwatch-metrics.log 2>&1"
+    minute: "*/5"
+    hour: "*"
+    user: root
+  when: enable_cloudwatch | default(true)
+  tags:
+    - database
+    - cloudwatch
+    - monitoring
+    - cron
+
+- name: Create database performance report script
+  template:
+    src: db-performance-report.py.j2
+    dest: /opt/db-tools/monitoring/db-performance-report.py
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - database
+    - monitoring
+
+- name: Setup weekly database performance report
+  cron:
+    name: "Weekly database performance report"
+    job: "/opt/db-tools/monitoring/db-performance-report.py >> /var/log/db-tools/performance-report.log 2>&1"
+    minute: "0"
+    hour: "8"
+    weekday: "1"
+    user: root
+  when: enable_performance_reports | default(true)
+  tags:
+    - database
+    - monitoring
+    - reporting
+    - cron
+
+- name: Test database connection
+  shell: /opt/db-tools/db-test.py
+  register: db_test_result
+  changed_when: false
+  failed_when: db_test_result.rc != 0
+  when: test_db_connection | default(true)
+  tags:
+    - database
+    - validation
+
+- name: Display database connection status
+  debug:
+    msg: "Database connection test: {{ 'PASSED' if db_test_result.rc == 0 else 'FAILED' }}"
+  when: db_test_result is defined
+  tags:
+    - database
+    - validation
+
+- name: Create database documentation
+  template:
+    src: database-info.md.j2
+    dest: /opt/db-tools/database-info.md
+    owner: root
+    group: root
+    mode: '0644'
+  tags:
+    - database
+    - documentation
+

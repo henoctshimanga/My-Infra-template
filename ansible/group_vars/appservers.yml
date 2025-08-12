@@ -1,0 +1,153 @@
+---
+# Application server specific variables
+
+# Node.js configuration
+nodejs_version: "18.x"
+npm_registry: "https://registry.npmjs.org/"
+npm_global_packages:
+  - pm2
+  - nodemon
+  - yarn
+
+# Application configuration
+app_name: "iac-solution-app"
+app_port: 3000
+app_user: "app"
+app_group: "app"
+app_home: "/opt/{{ app_name }}"
+
+# Environment configuration
+node_env: "{{ environment }}"
+log_level: "info"
+node_options: "--max-old-space-size=2048"
+
+# PM2 configuration
+pm2_apps:
+  - name: "{{ app_name }}"
+    script: "app.js"
+    instances: "max"
+    exec_mode: "cluster"
+    env:
+      NODE_ENV: "{{ node_env }}"
+      PORT: "{{ app_port }}"
+      LOG_LEVEL: "{{ log_level }}"
+
+pm2_max_memory_restart: "1G"
+pm2_log_date_format: "YYYY-MM-DD HH:mm Z"
+pm2_user: "{{ app_user }}"
+pm2_home: "/home/{{ app_user }}/.pm2"
+
+# Database connection configuration
+database_config:
+  host: "{{ hostvars['database']['ansible_host'] | default('localhost') }}"
+  port: "{{ hostvars['database']['db_port'] | default(5432) }}"
+  name: "{{ hostvars['database']['db_name'] | default('appdb') }}"
+  ssl: true
+  pool_min: 2
+  pool_max: 10
+  connection_timeout: 30000
+
+# Application dependencies
+app_dependencies:
+  - express
+  - helmet
+  - cors
+  - morgan
+  - compression
+  - dotenv
+  - pg
+  - redis
+  - winston
+  - express-rate-limit
+  - express-validator
+
+# Health check configuration
+health_check_endpoint: "/health"
+health_check_timeout: 5
+health_check_interval: 30
+
+# Performance and resource limits
+app_memory_limit: "512M"
+app_cpu_limit: "1.0"
+max_old_space_size: 2048
+
+# Security configuration
+app_secrets:
+  - name: "JWT_SECRET"
+    length: 32
+  - name: "SESSION_SECRET"
+    length: 32
+  - name: "API_KEY"
+    length: 64
+
+# Application directories
+app_directories:
+  - "{{ app_home }}"
+  - "{{ app_home }}/logs"
+  - "{{ app_home }}/tmp"
+  - "{{ app_home }}/uploads"
+  - "/var/log/{{ app_name }}"
+  - "/etc/{{ app_name }}"
+
+# Log configuration
+app_log_level: "{{ log_level }}"
+app_log_file: "/var/log/{{ app_name }}/app.log"
+app_error_log_file: "/var/log/{{ app_name }}/error.log"
+log_rotation:
+  max_size: "10M"
+  max_files: 10
+  compress: true
+
+# Monitoring configuration
+enable_app_monitoring: true
+monitoring_port: 9100
+metrics_endpoint: "/metrics"
+
+# Redis configuration (if used for session storage)
+redis_config:
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 0
+  ttl: 3600
+
+# Backup configuration
+app_backup_enabled: true
+app_backup_schedule: "0 2 * * *"  # Daily at 2 AM
+app_backup_retention_days: 7
+backup_directories:
+  - "{{ app_home }}/uploads"
+  - "/etc/{{ app_name }}"
+
+# Development vs Production settings
+development_settings:
+  log_level: "debug"
+  enable_debug_middleware: true
+  hot_reload: true
+
+production_settings:
+  log_level: "warn"
+  enable_debug_middleware: false
+  hot_reload: false
+  cluster_mode: true
+  max_memory_restart: "1G"
+
+# Firewall rules for app servers
+app_firewall_rules:
+  - port: "{{ app_port }}"
+    proto: tcp
+    rule: allow
+    src: "{{ vpc_cidr | default('10.0.0.0/16') }}"
+  - port: "{{ monitoring_port }}"
+    proto: tcp
+    rule: allow
+    src: "{{ vpc_cidr | default('10.0.0.0/16') }}"
+
+# Application packages
+app_packages:
+  - build-essential
+  - python3-dev
+  - libpq-dev
+  - redis-tools
+  - imagemagick
+  - ffmpeg

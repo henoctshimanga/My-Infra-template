@@ -1,0 +1,77 @@
+---
+# Application server role variables
+
+# Node.js configuration
+nodejs_version: "18.x"
+npm_global_packages:
+  - pm2
+  - nodemon
+  - yarn
+
+# Application configuration
+app_name: "iac-solution-app"
+app_port: 3000
+app_user: "app"
+app_group: "app"
+app_home: "/opt/{{ app_name }}"
+
+# Environment configuration
+node_env: "{{ environment }}"
+log_level: "info"
+
+# PM2 configuration
+pm2_apps:
+  - name: "{{ app_name }}"
+    script: "app.js"
+    instances: "max"
+    exec_mode: "cluster"
+    env:
+      NODE_ENV: "{{ node_env }}"
+      PORT: "{{ app_port }}"
+      LOG_LEVEL: "{{ log_level }}"
+
+# Database connection (if database is configured)
+database_host: "{{ hostvars['database']['ansible_host'] | default('localhost') }}"
+database_port: "{{ hostvars['database']['db_port'] | default(5432) }}"
+database_name: "{{ hostvars['database']['db_name'] | default('appdb') }}"
+
+# Application dependencies
+app_dependencies:
+  - express
+  - helmet
+  - cors
+  - morgan
+  - compression
+  - dotenv
+  - pg  # PostgreSQL client
+  - redis  # Redis client
+
+# Health check configuration
+health_check_endpoint: "/health"
+health_check_timeout: 5
+
+# Monitoring configuration
+enable_monitoring: true
+monitoring_port: 9100
+
+# Backup configuration
+enable_backups: true
+backup_retention_days: 7
+backup_s3_bucket: "{{ project_name }}-{{ environment }}-app-backups"
+
+# Log configuration
+log_retention_days: 30
+log_max_size: "10M"
+
+# Security configuration
+app_secrets:
+  - name: "JWT_SECRET"
+    length: 32
+  - name: "SESSION_SECRET"
+    length: 32
+
+# Performance tuning
+node_options: "--max-old-space-size=2048"
+pm2_max_memory_restart: "1G"
+pm2_log_date_format: "YYYY-MM-DD HH:mm Z"
+

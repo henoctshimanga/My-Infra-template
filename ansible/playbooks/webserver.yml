@@ -1,0 +1,199 @@
+---
+# Webserver-specific playbook
+# Configures Nginx web servers with SSL, security, and monitoring
+
+- name: Configure web servers
+  hosts: webservers
+  become: yes
+  gather_facts: yes
+  serial: "50%"  # Rolling deployment for zero downtime
+  
+  vars:
+    nginx_user: www-data
+    nginx_worker_processes: auto
+    nginx_worker_connections: 1024
+    nginx_keepalive_timeout: 65
+    nginx_client_max_body_size: "10m"
+    nginx_server_tokens: "off"
+    nginx_gzip: "on"
+    nginx_gzip_vary: "on"
+    nginx_gzip_min_length: 1024
+    nginx_gzip_types: "text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript"
+    
+    # SSL Configuration
+    ssl_protocols: "TLSv1.2 TLSv1.3"
+    ssl_ciphers: "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384"
+    ssl_prefer_server_ciphers: "off"
+    
+    # Security Headers
+    security_headers:
+      - "X-Frame-Options DENY"
+      - "X-Content-Type-Options nosniff"
+      - "X-XSS-Protection 1; mode=block"
+      - "Referrer-Policy strict-origin-when-cross-origin"
+      - "Content-Security-Policy default-src 'self'"
+    
+    # Rate Limiting
+    rate_limit_zone: "$binary_remote_addr zone=limit:10m rate=10r/s"
+    
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      
+    - name: Install Nginx and dependencies
+      apt:
+        name:
+          - nginx
+          - nginx-extras
+          - ssl-cert
+          - logrotate
+        state: present
+        
+    - name: Create nginx directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - /etc/nginx/sites-available
+        - /etc/nginx/sites-enabled
+        - /etc/nginx/snippets
+        - /var/log/nginx
+        - /var/cache/nginx
+        
+    - name: Generate DH parameters
+      openssl_dhparam:
+        path: /etc/ssl/certs/dhparam.pem
+        size: 2048
+      notify: reload nginx
+      
+    - name: Create nginx configuration
+      template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+        backup: yes
+        owner: root
+        group: root
+        mode: '0644'
+      notify: reload nginx
+      
+    - name: Create SSL configuration snippet
+      template:
+        src: ssl-params.conf.j2
+        dest: /etc/nginx/snippets/ssl-params.conf
+        owner: root
+        group: root
+        mode: '0644'
+      notify: reload nginx
+      
+    - name: Create default site configuration
+      template:
+        src: default.conf.j2
+        dest: /etc/nginx/sites-available/default
+        owner: root
+        group: root
+        mode: '0644'
+      notify: reload nginx
+      
+    - name: Enable default site
+      file:
+        src: /etc/nginx/sites-available/default
+        dest: /etc/nginx/sites-enabled/default
+        state: link
+      notify: reload nginx
+      
+    - name: Remove default nginx site if exists
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      when: custom_nginx_config | default(false)
+      notify: reload nginx
+      
+    - name: Test nginx configuration
+      command: nginx -t
+      register: nginx_test
+      changed_when: false
+      failed_when: nginx_test.rc != 0
+      
+    - name: Start and enable nginx
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+        daemon_reload: yes
+        
+    - name: Configure logrotate for nginx
+      template:
+        src: nginx-logrotate.j2
+        dest: /etc/logrotate.d/nginx
+        owner: root
+        group: root
+        mode: '0644'
+        
+    - name: Install monitoring tools
+      apt:
+        name:
+          - nginx-prometheus-exporter
+          - htop
+          - iotop
+          - nethogs
+        state: present
+      when: enable_monitoring | default(true)
+      
+    - name: Create nginx status configuration
+      blockinfile:
+        path: /etc/nginx/sites-available/default
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - STATUS"
+        insertbefore: "^}"
+        block: |
+          location /nginx_status {
+              stub_status on;
+              access_log off;
+              allow 127.0.0.1;
+              allow {{ ansible_default_ipv4.network }}/{{ ansible_default_ipv4.netmask }};
+              deny all;
+          }
+      when: enable_nginx_status | default(true)
+      notify: reload nginx
+      
+    - name: Create health check endpoint
+      copy:
+        content: |
+          server {
+              listen 8080;
+              server_name _;
+              
+              location /health {
+                  access_log off;
+                  return 200 "healthy\n";
+                  add_header Content-Type text/plain;
+              }
+          }
+        dest: /etc/nginx/sites-available/health
+        owner: root
+        group: root
+        mode: '0644'
+      notify: reload nginx
+      
+    - name: Enable health check endpoint
+      file:
+        src: /etc/nginx/sites-available/health
+        dest: /etc/nginx/sites-enabled/health
+        state: link
+      notify: reload nginx
+      
+  handlers:
+    - name: reload nginx
+      systemd:
+        name: nginx
+        state: reloaded
+        
+    - name: restart nginx
+      systemd:
+        name: nginx
+        state: restarted
+

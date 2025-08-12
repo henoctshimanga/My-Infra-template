@@ -1,0 +1,52 @@
+---
+# Security handlers
+
+- name: restart fail2ban
+  systemd:
+    name: fail2ban
+    state: restarted
+    daemon_reload: yes
+  listen: "restart fail2ban"
+
+- name: reload fail2ban
+  systemd:
+    name: fail2ban
+    state: reloaded
+  listen: "reload fail2ban"
+
+- name: restart ssh
+  systemd:
+    name: ssh
+    state: restarted
+    daemon_reload: yes
+  listen: "restart ssh"
+
+- name: restart ufw
+  systemd:
+    name: ufw
+    state: restarted
+  listen: "restart ufw"
+
+- name: reload ufw
+  command: ufw --force reload
+  listen: "reload ufw"
+
+- name: restart rsyslog
+  systemd:
+    name: rsyslog
+    state: restarted
+  listen: "restart rsyslog"
+
+- name: update aide database
+  shell: aideinit && mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+  listen: "update aide database"
+
+- name: update rkhunter
+  command: rkhunter --update
+  listen: "update rkhunter"
+
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+  listen: "reload systemd"
+

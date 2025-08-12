@@ -1,0 +1,194 @@
+---
+# Security role variables
+
+# Firewall configuration
+enable_firewall: true
+ssh_port: 22
+allowed_tcp_ports:
+  - "{{ ssh_port }}"
+allowed_udp_ports: []
+
+# Fail2ban configuration
+enable_fail2ban: true
+fail2ban_bantime: "1h"
+fail2ban_findtime: "10m"
+fail2ban_maxretry: 5
+fail2ban_backend: "auto"
+fail2ban_loglevel: "INFO"
+fail2ban_logtarget: "/var/log/fail2ban.log"
+fail2ban_ignoreip:
+  - "127.0.0.1/8"
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "192.168.0.0/16"
+
+# SSH security configuration
+ssh_port: 22
+ssh_protocol: 2
+ssh_listen_address: "0.0.0.0"
+ssh_permit_root_login: "no"
+ssh_password_authentication: "no"
+ssh_pubkey_authentication: "yes"
+ssh_permit_empty_passwords: "no"
+ssh_challenge_response_authentication: "no"
+ssh_x11_forwarding: "no"
+ssh_max_auth_tries: 3
+ssh_client_alive_interval: 300
+ssh_client_alive_count_max: 2
+ssh_login_grace_time: 30
+ssh_max_sessions: 2
+ssh_max_startups: "10:30:60"
+ssh_banner: "/etc/ssh/banner"
+
+# Services to disable for security
+disable_services:
+  - apache2
+  - nginx  # Only disable if not a web server
+  - sendmail
+  - postfix  # Only if not needed
+  - dovecot
+  - cups
+  - bluetooth
+  - avahi-daemon
+
+# Packages to remove (if not needed)
+unnecessary_packages:
+  - telnet
+  - rsh-server
+  - rsh-client
+  - talk
+  - talkd
+  - finger
+  - netcat
+  - nc
+
+# AIDE configuration
+enable_aide: true
+aide_database_out: "/var/lib/aide/aide.db"
+aide_database_new: "/var/lib/aide/aide.db.new"
+aide_gzip_dbout: "yes"
+
+# Rkhunter configuration
+enable_rkhunter: true
+rkhunter_update_mirrors: true
+rkhunter_mirrors_mode: 0
+rkhunter_web_cmd: ""
+rkhunter_allow_ssh_root_user: "no"
+rkhunter_allow_ssh_prot_v1: 0
+
+# Automatic security updates
+enable_auto_security_updates: true
+unattended_upgrades_origins:
+  - "origin=Ubuntu,archive=${distro_codename}-security"
+  - "origin=Ubuntu,archive=${distro_codename}-updates"
+
+unattended_upgrades_package_blacklist: []
+unattended_upgrades_auto_reboot: false
+unattended_upgrades_auto_reboot_time: "02:00"
+unattended_upgrades_mail: ""
+
+# Security monitoring
+enable_security_monitoring: true
+enable_security_audit: true
+enable_aide: true
+enable_rkhunter: true
+
+# Log monitoring patterns
+security_log_patterns:
+  - pattern: "Failed password"
+    file: "/var/log/auth.log"
+    severity: "warning"
+  - pattern: "Invalid user"
+    file: "/var/log/auth.log"
+    severity: "warning"
+  - pattern: "Connection closed by"
+    file: "/var/log/auth.log"
+    severity: "info"
+  - pattern: "Accepted password"
+    file: "/var/log/auth.log"
+    severity: "info"
+  - pattern: "sudo:"
+    file: "/var/log/auth.log"
+    severity: "notice"
+
+# Password policy
+password_max_age: 90
+password_min_age: 1
+password_warn_age: 7
+password_min_length: 8
+
+# File integrity monitoring paths
+aide_monitor_paths:
+  - "/bin"
+  - "/sbin"
+  - "/usr/bin"
+  - "/usr/sbin"
+  - "/usr/local/bin"
+  - "/usr/local/sbin"
+  - "/etc"
+  - "/opt"
+  - "/root"
+  - "/home"
+  - "/var/www"
+
+# Kernel security parameters (via sysctl)
+security_sysctl_parameters:
+  # Network security
+  - name: "net.ipv4.conf.all.send_redirects"
+    value: 0
+  - name: "net.ipv4.conf.default.send_redirects"
+    value: 0
+  - name: "net.ipv4.conf.all.accept_redirects"
+    value: 0
+  - name: "net.ipv4.conf.default.accept_redirects"
+    value: 0
+  - name: "net.ipv4.conf.all.secure_redirects"
+    value: 0
+  - name: "net.ipv4.conf.default.secure_redirects"
+    value: 0
+  - name: "net.ipv4.ip_forward"
+    value: 0
+  - name: "net.ipv4.conf.all.accept_source_route"
+    value: 0
+  - name: "net.ipv4.conf.default.accept_source_route"
+    value: 0
+  - name: "net.ipv4.conf.all.log_martians"
+    value: 1
+  - name: "net.ipv4.conf.default.log_martians"
+    value: 1
+  - name: "net.ipv4.icmp_echo_ignore_broadcasts"
+    value: 1
+  - name: "net.ipv4.icmp_ignore_bogus_error_responses"
+    value: 1
+  - name: "net.ipv4.tcp_syncookies"
+    value: 1
+  
+  # Kernel security
+  - name: "kernel.dmesg_restrict"
+    value: 1
+  - name: "kernel.kptr_restrict"
+    value: 2
+  - name: "kernel.yama.ptrace_scope"
+    value: 1
+  - name: "kernel.core_uses_pid"
+    value: 1
+
+# Security audit commands
+security_audit_commands:
+  - name: "Check for world-writable files"
+    command: "find / -type f -perm -002 2>/dev/null | head -20"
+  - name: "Check for files with no owner"
+    command: "find / -nouser -o -nogroup 2>/dev/null | head -20"
+  - name: "Check for SUID/SGID files"
+    command: "find / \\( -perm -4000 -o -perm -2000 \\) -type f 2>/dev/null | head -20"
+  - name: "Check active network connections"
+    command: "netstat -tuln"
+  - name: "Check running processes"
+    command: "ps aux --sort=-%cpu | head -20"
+  - name: "Check disk usage"
+    command: "df -h"
+  - name: "Check memory usage"
+    command: "free -h"
+  - name: "Check last login attempts"
+    command: "last | head -20"
+

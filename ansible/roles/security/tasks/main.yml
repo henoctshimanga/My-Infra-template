@@ -1,0 +1,386 @@
+---
+# Security role tasks - system hardening and security configurations
+
+- name: Install security packages
+  apt:
+    name:
+      - fail2ban
+      - ufw
+      - aide
+      - rkhunter
+      - chkrootkit
+      - lynis
+      - unattended-upgrades
+      - apt-listchanges
+    state: present
+    update_cache: yes
+  tags:
+    - security
+    - packages
+
+- name: Configure UFW firewall defaults
+  ufw:
+    direction: "{{ item.direction }}"
+    policy: "{{ item.policy }}"
+  loop:
+    - { direction: 'incoming', policy: 'deny' }
+    - { direction: 'outgoing', policy: 'allow' }
+    - { direction: 'routed', policy: 'deny' }
+  tags:
+    - security
+    - firewall
+    - ufw
+
+- name: Allow SSH through firewall
+  ufw:
+    rule: allow
+    port: "{{ ssh_port | default(22) }}"
+    proto: tcp
+  when: enable_firewall | default(true)
+  tags:
+    - security
+    - firewall
+    - ssh
+
+- name: Allow HTTP and HTTPS for web servers
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - '80'
+    - '443'
+  when: 
+    - enable_firewall | default(true)
+    - "'webservers' in group_names"
+  tags:
+    - security
+    - firewall
+    - web
+
+- name: Enable UFW firewall
+  ufw:
+    state: enabled
+  when: enable_firewall | default(true)
+  tags:
+    - security
+    - firewall
+
+- name: Configure fail2ban
+  template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: '0644'
+    backup: yes
+  notify: restart fail2ban
+  when: enable_fail2ban | default(true)
+  tags:
+    - security
+    - fail2ban
+
+- name: Create custom fail2ban filter for nginx
+  template:
+    src: nginx-badbots.conf.j2
+    dest: /etc/fail2ban/filter.d/nginx-badbots.conf
+    owner: root
+    group: root
+    mode: '0644'
+  when: 
+    - enable_fail2ban | default(true)
+    - "'webservers' in group_names"
+  notify: restart fail2ban
+  tags:
+    - security
+    - fail2ban
+    - nginx
+
+- name: Start and enable fail2ban
+  systemd:
+    name: fail2ban
+    state: started
+    enabled: yes
+  when: enable_fail2ban | default(true)
+  tags:
+    - security
+    - fail2ban
+
+- name: Secure SSH configuration
+  template:
+    src: sshd_config.j2
+    dest: /etc/ssh/sshd_config
+    owner: root
+    group: root
+    mode: '0644'
+    backup: yes
+    validate: '/usr/sbin/sshd -t -f %s'
+  notify: restart ssh
+  tags:
+    - security
+    - ssh
+
+- name: Set up SSH key-based authentication
+  authorized_key:
+    user: "{{ ansible_user }}"
+    key: "{{ item }}"
+    state: present
+  loop: "{{ ssh_public_keys | default([]) }}"
+  when: ssh_public_keys is defined
+  tags:
+    - security
+    - ssh
+    - keys
+
+- name: Disable root login
+  user:
+    name: root
+    password_lock: yes
+  tags:
+    - security
+    - users
+
+- name: Configure sudo settings
+  lineinfile:
+    path: /etc/sudoers
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    validate: '/usr/sbin/visudo -cf %s'
+  loop:
+    - regexp: '^Defaults\s+env_reset'
+      line: 'Defaults env_reset'
+    - regexp: '^Defaults\s+mail_badpass'
+      line: 'Defaults mail_badpass'
+    - regexp: '^Defaults\s+secure_path'
+      line: 'Defaults secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"'
+  tags:
+    - security
+    - sudo
+
+- name: Set password policies
+  lineinfile:
+    path: /etc/login.defs
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - regexp: '^PASS_MAX_DAYS'
+      line: 'PASS_MAX_DAYS 90'
+    - regexp: '^PASS_MIN_DAYS'
+      line: 'PASS_MIN_DAYS 1'
+    - regexp: '^PASS_WARN_AGE'
+      line: 'PASS_WARN_AGE 7'
+    - regexp: '^PASS_MIN_LEN'
+      line: 'PASS_MIN_LEN 8'
+  tags:
+    - security
+    - passwords
+
+- name: Install and configure PAM modules for password complexity
+  apt:
+    name: libpam-pwquality
+    state: present
+  tags:
+    - security
+    - passwords
+    - pam
+
+- name: Configure password complexity
+  lineinfile:
+    path: /etc/security/pwquality.conf
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - regexp: '^#?\s*minlen'
+      line: 'minlen = 8'
+    - regexp: '^#?\s*minclass'
+      line: 'minclass = 3'
+    - regexp: '^#?\s*maxrepeat'
+      line: 'maxrepeat = 3'
+    - regexp: '^#?\s*dcredit'
+      line: 'dcredit = -1'
+    - regexp: '^#?\s*ucredit'
+      line: 'ucredit = -1'
+    - regexp: '^#?\s*lcredit'
+      line: 'lcredit = -1'
+    - regexp: '^#?\s*ocredit'
+      line: 'ocredit = -1'
+  tags:
+    - security
+    - passwords
+    - pam
+
+- name: Configure system file permissions
+  file:
+    path: "{{ item.path }}"
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: '/etc/passwd', owner: 'root', group: 'root', mode: '0644' }
+    - { path: '/etc/shadow', owner: 'root', group: 'shadow', mode: '0640' }
+    - { path: '/etc/group', owner: 'root', group: 'root', mode: '0644' }
+    - { path: '/etc/gshadow', owner: 'root', group: 'shadow', mode: '0640' }
+    - { path: '/etc/crontab', owner: 'root', group: 'root', mode: '0600' }
+    - { path: '/etc/ssh/sshd_config', owner: 'root', group: 'root', mode: '0600' }
+  tags:
+    - security
+    - permissions
+
+- name: Remove unnecessary packages
+  apt:
+    name: "{{ unnecessary_packages | default([]) }}"
+    state: absent
+    purge: yes
+  when: unnecessary_packages is defined
+  tags:
+    - security
+    - packages
+    - cleanup
+
+- name: Disable unnecessary services
+  systemd:
+    name: "{{ item }}"
+    enabled: no
+    state: stopped
+  loop: "{{ disable_services | default([]) }}"
+  ignore_errors: yes
+  tags:
+    - security
+    - services
+
+- name: Initialize AIDE database
+  shell: aideinit
+  args:
+    creates: /var/lib/aide/aide.db.new
+  tags:
+    - security
+    - aide
+    - intrusion_detection
+
+- name: Move AIDE database
+  command: mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+  args:
+    creates: /var/lib/aide/aide.db
+  tags:
+    - security
+    - aide
+    - intrusion_detection
+
+- name: Set up AIDE cron job
+  cron:
+    name: "AIDE integrity check"
+    job: "/usr/bin/aide --check 2>&1 | /usr/bin/logger -t aide"
+    minute: "0"
+    hour: "2"
+    user: root
+  when: enable_aide | default(true)
+  tags:
+    - security
+    - aide
+    - cron
+
+- name: Configure rkhunter
+  template:
+    src: rkhunter.conf.j2
+    dest: /etc/rkhunter.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: yes
+  tags:
+    - security
+    - rkhunter
+
+- name: Update rkhunter database
+  command: rkhunter --update
+  changed_when: false
+  tags:
+    - security
+    - rkhunter
+
+- name: Set up rkhunter cron job
+  cron:
+    name: "Rootkit Hunter scan"
+    job: "/usr/bin/rkhunter --cronjob --update --quiet 2>&1 | /usr/bin/logger -t rkhunter"
+    minute: "0"
+    hour: "3"
+    user: root
+  when: enable_rkhunter | default(true)
+  tags:
+    - security
+    - rkhunter
+    - cron
+
+- name: Create security audit script
+  template:
+    src: security-audit.sh.j2
+    dest: /opt/scripts/security-audit.sh
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - security
+    - audit
+
+- name: Set up security audit cron job
+  cron:
+    name: "Security audit"
+    job: "/opt/scripts/security-audit.sh >> /var/log/applications/security-audit.log 2>&1"
+    minute: "0"
+    hour: "4"
+    weekday: "0"
+    user: root
+  when: enable_security_audit | default(true)
+  tags:
+    - security
+    - audit
+    - cron
+
+- name: Configure automatic security updates
+  template:
+    src: 50unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades
+    owner: root
+    group: root
+    mode: '0644'
+  when: enable_auto_security_updates | default(true)
+  tags:
+    - security
+    - updates
+
+- name: Enable automatic security updates
+  template:
+    src: 20auto-upgrades.j2
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: '0644'
+  when: enable_auto_security_updates | default(true)
+  tags:
+    - security
+    - updates
+
+- name: Create security monitoring script
+  template:
+    src: security-monitor.sh.j2
+    dest: /opt/scripts/security-monitor.sh
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - security
+    - monitoring
+
+- name: Set up security monitoring cron job
+  cron:
+    name: "Security monitoring"
+    job: "/opt/scripts/security-monitor.sh >> /var/log/applications/security-monitor.log 2>&1"
+    minute: "*/15"
+    hour: "*"
+    user: root
+  when: enable_security_monitoring | default(true)
+  tags:
+    - security
+    - monitoring
+    - cron
+

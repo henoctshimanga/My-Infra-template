@@ -1,0 +1,82 @@
+---
+# Webserver role variables
+
+# Nginx configuration
+nginx_user: www-data
+nginx_worker_processes: auto
+nginx_worker_connections: 1024
+nginx_keepalive_timeout: 65
+nginx_client_max_body_size: "10m"
+nginx_server_tokens: "off"
+
+# Gzip compression
+nginx_gzip: "on"
+nginx_gzip_vary: "on"
+nginx_gzip_min_length: 1024
+nginx_gzip_types: >
+  text/plain
+  text/css
+  application/json
+  application/javascript
+  text/xml
+  application/xml
+  application/xml+rss
+  text/javascript
+  application/x-font-ttf
+  font/opentype
+  image/svg+xml
+  image/x-icon
+
+# SSL configuration
+ssl_protocols: "TLSv1.2 TLSv1.3"
+ssl_prefer_server_ciphers: "off"
+ssl_ciphers: >
+  ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:
+  ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:
+  ECDHE-RSA-CHACHA20-POLY1305:ECDHE-RSA-AES128-SHA:
+  ECDHE-RSA-AES256-SHA
+
+# Security headers
+security_headers:
+  - "X-Frame-Options: DENY"
+  - "X-Content-Type-Options: nosniff"
+  - "X-XSS-Protection: 1; mode=block"
+  - "Referrer-Policy: strict-origin-when-cross-origin"
+  - "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;"
+
+# Rate limiting
+rate_limit_zone: "$binary_remote_addr zone=limit:10m rate=10r/s"
+rate_limit_burst: 20
+rate_limit_nodelay: true
+
+# Application configuration
+app_name: "iac-solution"
+app_port: 3000
+upstream_servers: []  # Will be populated by inventory
+
+# Monitoring configuration
+health_check_port: 8080
+health_check_url: "/health"
+enable_nginx_status: true
+nginx_status_allow_ips:
+  - "127.0.0.1"
+  - "{{ ansible_default_ipv4.network }}/{{ ansible_default_ipv4.netmask }}"
+
+# Log rotation
+nginx_log_retention_days: 30
+nginx_log_compress: true
+
+# CloudWatch configuration
+nginx_cloudwatch_logs:
+  - log_file: "/var/log/nginx/access.log"
+    log_group: "{{ project_name }}-{{ environment }}-nginx-access"
+  - log_file: "/var/log/nginx/error.log"
+    log_group: "{{ project_name }}-{{ environment }}-nginx-error"
+
+# Backup upstream configuration (if app servers are not available)
+default_upstream_config: |
+  upstream backend {
+      least_conn;
+      server 127.0.0.1:3000 max_fails=3 fail_timeout=30s;
+  }
+

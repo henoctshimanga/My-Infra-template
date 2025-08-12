@@ -1,0 +1,123 @@
+---
+# Database-specific playbook
+# This playbook is primarily for RDS configuration and monitoring
+# since we're using managed RDS, most DB tasks are handled by AWS
+
+- name: Configure database monitoring and backup tools
+  hosts: databases
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    postgres_client_version: "15"
+    backup_retention_days: 7
+    backup_s3_bucket: "{{ project_name }}-{{ environment }}-db-backups"
+    monitoring_tools:
+      - postgresql-client
+      - awscli
+      - python3-psycopg2
+      - python3-boto3
+    
+  tasks:
+    - name: Install PostgreSQL client and monitoring tools
+      apt:
+        name: "{{ monitoring_tools }}"
+        state: present
+        update_cache: yes
+      
+    - name: Create database scripts directory
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - /opt/db-scripts
+        - /opt/db-scripts/backups
+        - /opt/db-scripts/monitoring
+        - /var/log/db-scripts
+        
+    - name: Create database connection test script
+      template:
+        src: db-test.py.j2
+        dest: /opt/db-scripts/db-test.py
+        owner: root
+        group: root
+        mode: '0755'
+        
+    - name: Create database monitoring script
+      template:
+        src: db-monitor.py.j2
+        dest: /opt/db-scripts/monitoring/db-monitor.py
+        owner: root
+        group: root
+        mode: '0755'
+        
+    - name: Create backup verification script
+      template:
+        src: backup-verify.sh.j2
+        dest: /opt/db-scripts/backups/backup-verify.sh
+        owner: root
+        group: root
+        mode: '0755'
+        
+    - name: Install database monitoring cron jobs
+      cron:
+        name: "{{ item.name }}"
+        job: "{{ item.job }}"
+        minute: "{{ item.minute }}"
+        hour: "{{ item.hour }}"
+        user: root
+      loop:
+        - name: "Database connection test"
+          job: "/opt/db-scripts/db-test.py >> /var/log/db-scripts/connection-test.log 2>&1"
+          minute: "*/5"
+          hour: "*"
+        - name: "Database monitoring"
+          job: "/opt/db-scripts/monitoring/db-monitor.py >> /var/log/db-scripts/monitoring.log 2>&1"
+          minute: "0"
+          hour: "*"
+        - name: "Backup verification"
+          job: "/opt/db-scripts/backups/backup-verify.sh >> /var/log/db-scripts/backup-verify.log 2>&1"
+          minute: "0"
+          hour: "6"
+      when: enable_db_monitoring | default(true)
+      
+    - name: Configure log rotation for database scripts
+      copy:
+        content: |
+          /var/log/db-scripts/*.log {
+              daily
+              rotate 7
+              compress
+              delaycompress
+              missingok
+              notifempty
+              copytruncate
+          }
+        dest: /etc/logrotate.d/db-scripts
+        owner: root
+        group: root
+        mode: '0644'
+        
+    - name: Create database maintenance script
+      template:
+        src: db-maintenance.sh.j2
+        dest: /opt/db-scripts/db-maintenance.sh
+        owner: root
+        group: root
+        mode: '0755'
+        
+    - name: Test database connection
+      command: /opt/db-scripts/db-test.py
+      register: db_test_result
+      changed_when: false
+      failed_when: db_test_result.rc != 0
+      when: test_db_connection | default(true)
+      
+    - name: Display database connection status
+      debug:
+        msg: "Database connection test: {{ 'PASSED' if db_test_result.rc == 0 else 'FAILED' }}"
+      when: db_test_result is defined
+

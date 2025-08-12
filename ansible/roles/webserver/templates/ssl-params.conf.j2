@@ -1,0 +1,58 @@
+# {{ ansible_managed }}
+# SSL/TLS configuration parameters
+
+# SSL Protocols
+ssl_protocols {{ ssl_protocols | default('TLSv1.2 TLSv1.3') }};
+
+# SSL Ciphers
+ssl_ciphers {{ ssl_ciphers | default('ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:ECDHE-RSA-CHACHA20-POLY1305') }};
+
+# SSL Cipher Preference
+ssl_prefer_server_ciphers {{ ssl_prefer_server_ciphers | default('off') }};
+
+# SSL Session Configuration
+ssl_session_cache {{ ssl_session_cache | default('shared:SSL:10m') }};
+ssl_session_timeout {{ ssl_session_timeout | default('10m') }};
+ssl_session_tickets {{ ssl_session_tickets | default('off') }};
+
+# SSL Buffer Size
+ssl_buffer_size 16k;
+
+# DH Parameters
+ssl_dhparam /etc/ssl/certs/dhparam.pem;
+
+# OCSP Stapling
+ssl_stapling {{ ssl_stapling | default('on') }};
+ssl_stapling_verify {{ ssl_stapling_verify | default('on') }};
+ssl_trusted_certificate /etc/ssl/certs/nginx-selfsigned.crt;
+
+# DNS resolver for OCSP
+resolver 8.8.8.8 8.8.4.4 1.1.1.1 valid=300s;
+resolver_timeout 5s;
+
+# SSL Early Data (TLS 1.3)
+ssl_early_data on;
+
+# Perfect Forward Secrecy
+ssl_ecdh_curve secp384r1;
+
+# SSL Verification
+ssl_verify_client off;
+
+# Additional security settings
+add_header X-Frame-Options DENY always;
+add_header X-Content-Type-Options nosniff always;
+add_header X-XSS-Protection "1; mode=block" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+# Content Security Policy (basic)
+add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none';" always;
+
+# HSTS (HTTP Strict Transport Security)
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+
+# Expect-CT header
+add_header Expect-CT "max-age=86400, enforce" always;
+
+# Feature Policy / Permissions Policy
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), vr=(), accelerometer=(), gyroscope=(), magnetometer=()" always;
