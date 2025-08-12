@@ -1,17 +1,18 @@
 terraform {
-  required_version = ">= 1.5.0" // min version
+  required_version = ">= 1.5.0"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0" //recent provider
-    }
-    template = {
-      source  = "hashicorp/template"
-      version = "~> 2.2" //for cloud-init
+      version = "~> 5.0"
     }
     local = {
       source  = "hashicorp/local"
-      version = "~> 2.5" // for ansible inventory
+      version = "~> 2.5"
     }
   }
+}
+
+provider "aws" {
+  region  = var.aws_region
+  profile = var.aws_profile
 }
